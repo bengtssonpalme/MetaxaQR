@@ -1,0 +1,1529 @@
+#!/usr/bin/perl
+# Metaxa 3.0 d1
+$app_title     = "MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 d1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"   MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets\
+    Copyright (C) 2011-2021 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- Entirely new classification method\
+- New default classification databases\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+
+$usage = "\
+-i {file} : DNA FASTA input file to investigate\
+-o {file} : Base for the names of output file(s)\
+-f {a, auto, f, fasta, q, fastq, p, paired-end} : Specifies the format of the input file, default = auto\
+-g {ssu, lsu, string} : Specifies the barcoding gene MetaxaQR should look for, default is ssu\
+--cpu {value} : The number of CPU threads to use, default is 1\
+
+--help : displays the full options for MetaxaQR\
+
+-p {directory} : A path to a directory of HMM-profile collections representing rRNA conserved regions, default is in the same directory as metaxa itself\
+-d {database} : The database used for classification, default is in the same directory as metaxaQR itself\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Profile set to use for the search (comma-separated), default is all\
+";
+
+$options = "\
+-i {file} : DNA FASTA or FASTQ input file to investigate\
+-o {file} : Base for the names of output file(s)\
+-1 {file} : DNA FASTQ input file containing the first reads in the read pairs to investigate\
+-2 {file} : DNA FASTQ input file containing the second reads in the pairs to investigate\
+-f {a, auto, f, fasta, q, fastq, p, paired-end, pa, paired-fasta} : Specifies the format of the input file, default = auto\
+-z {f, a, auto, gzip, bzip, zip, dsrc} : Specifies the format of the input file, default = f (off)\
+-g {ssu, lsu, string} : Specifies the barcoding gene MetaxaQR should look for, default is ssu\
+--pairfile {file} : DNA FASTQ file containing the pairs to the sequences in the input file\
+--format {a, auto, f, fasta, q, fastq, p, paired-end} : Specifies the format of the input file, default = auto\
+--mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
+-x {T or F} : Run only the extraction part of MetaxaQR, without classification, off (F) by default\
+-c {T or F} : Run only the classification part of MetaxaQR, without prior extraction, off (F) by default\
+-p {directory} : A path to a directory of HMM-profile collections representing rRNA conserved regions, default is in the same directory as metaxa itself\
+-d {database} : The BLAST databased used for classification, default is in the same directory as metaxa itself\
+--hmmscan {file} : If the hmmscan has already been performed, this option can be used as the base for the hmmscan output files, and the hmmscan step will be skipped. Overrides the -o option, while a DNA FASTA file must still be supplied!\
+--date {T or F} : Adds a date and time stamp to the output directory, off (F) by default\
+--plus {T or F} : Runs blast search through blast+ instead of the legacy blastall engine, off (F) by default [REMOVED]\
+--usearch {version} : Runs usearch instead of blast, specify version, off (0) by default [REMOVED]\
+--usearch_bin {path} : Specifies the location of the Usearch binary to be used, default is 'usearch' only [REMOVED]\
+--ublast {T or F} : Runs the Ublast algorithm instead of Usearch algorithm, default is on (T) [REMOVED]\
+--reset {T or F} : Rebuilds the HMM database. Useful if HMMER has been updated or searches seem to fail mysteriously, off (F) by default\
+--temp {directory} : Custom directory to put the temporary files in\
+
+FASTQ and Paired-end options:\
+-q {value} : Minimum quality value for basecalling, default = 20\
+--quality_filter {T or F} : Filter out low-quality reads (below specified -q value), off (F) by default\
+--quality_trim {T or F} : Trim away ends of low quality (below -q value), off (F) by default\
+--quality_percent {value} : Percentage of low-quality (below -q value) accepted before filtering/trimming, default=10\
+--ignore_paired_read {T or F} : Do not discard the entire pair if only one of the reads is of bad quality, on (T) by default\
+--distance {value} : Specifies the distance between the sequence pairs, default = 150\
+
+Sequence selection options:\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Profile set to use for the search (comma-separated), default is all\
+-E {value} : Domain E-value cutoff for a sequence to be included in the output, default = 1\
+-S {value} : Domain score cutoff for a sequence to be included in the output, default = 12\
+-N {value} : The minimal number of domains that must match a sequence before it is included, default = 2\
+-M {value} : Number of sequence matches to consider for classification, default = 5 [REMOVED]\
+-R {value} : Reliability cutoff for taxonomic classification, default = 75 [LIKELY TO CHANGE]\
+-T {comma-separated values} : Sets the percent identity cutoff to be classified at a certain taxonomic level [REMOVED]\
+                              By default, these values are specified by the database used.\
+                              Order of the values is:         Kingdom/Domain,Phylum,Class,Order,Family,Genus,Species\
+                              Default values for the SSU are: 0,60,70,75,85,90,97\
+-H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50 [DEFAULT HAS CHANGED, AND INTERPRETATION OF OPTION HAS ALSO CHANGED!]\
+--selection_priority {score, domains, eval, sum} : Selects what will be of highest priority when determining the origin of the sequence, default is score\
+--scoring_model {new, old} : Selects the scoring model to be used for classification, select 'old' to use the pre 2.2 scoring model, default = new [REMOVED]\
+--search_eval {value} : The E-value cutoff used in the HMMER search, high numbers may slow down the process, cannot be used with the --search_score option, default is to use score cutoff, not E-value\
+--search_score {value} : The score cutoff used in the HMMER search, low numbers may slow down the process, cannot be used with the --search_eval option, default = 0\
+--masking {T or F} : Whether to use masking in the searches or not, off (F) by default [NEW OPTION, coupled to --qmask]\
+--gap_penalty {string} : The gap penalty scores applied to the vsearch step, default = '20I/2E+2I/1E' [NEW OPTION]\
+--search_id {value} : The sequence identity cutoff for the vsearch, default = 0.5 [NEW OPTION]\
+--search_maxaccepts {value} : Controls the --maxaccepts option of vsearch, default = 4 [NEW OPTION]\
+--search_maxrejects {value} : Controls the --maxrejects option of vsearch, default = 32 [NEW OPTION]\
+--search_wordsize {value} : The word-size used for the classification, default is 8 [NEW OPTION, coupled to --wordlength]\
+--blast_eval {value} : The E-value cutoff used in the BLAST search, high numbers may slow down the process, cannot be used with the --blast_score option, default is 1e-5 [REMOVED]\
+--blast_score {value} : The score cutoff used in the BLAST search, low numbers may slow down the process, cannot be used with the --blast_eval option, default is to used E-value cutoff, not score [REMOVED]\
+--blast_wordsize {value} : The word-size used for the BLAST-based classification, default is 14 [REMOVED]\
+--allow_single_domain {e-value,score or F} : Allow inclusion of sequences that only find a single domain, given that they satisfy the given E-value and score thresholds, on with parameters 1e-10,0 by default\
+--allow_reorder {T or F} : Allows profiles to be in the wrong order on extracted sequences, on (T) by default\
+--complement {T or F} : Checks both DNA strands against the database, creating reverse complements, on (T) by default\
+--cpu {value} : The number of CPU threads to use, default is 1\
+--multi_thread {T or F} : Multi-thread the HMMER-search, on (T) if number of CPUs (--cpu option > 1), else off (F) by default\
+--heuristics {T or F} : Selects whether to use HMMER's heuristic filtering, on (T) by default\
+--megablast {T or F} : Uses megablast for classification for better speed but less accuracy, off (F) by default [REMOVED]\
+--reference {file} : A file in FASTA format containing reference sequences to be sent to a separate file in the analysis, default is blank (unused)\
+--ref_identity {value} : The sequence identity cutoff to be considered a sequence to be derived from a reference entry, default = 99\
+
+Output options:\
+--summary {T or F} : Summary of results output, on (T) by default\
+--graphical {T or F} : 'Graphical' output, on (T) by default\
+--fasta {T or F} : FASTA-format output of extracted rRNA sequences, on (T) by default\
+--split_pairs {T or F} : Outputs the two read pairs separately instead of as a joint rRNA sequence, off (F) by default\
+--table {T or F} : Table format output of sequences containing probable rRNAs, off (F) by default\
+--taxonomy {T or F} : Table format output of probable taxonomic origin for sequences, on (T) by default\
+--reltax {T or F} : Output of probable taxonomic origin for sequences with reliability scores at each rank, off (F) by default [REMOVED]\
+--taxlevel {integer} : Force Metaxa to classify sequences at a certain taxonomy level, regardless of reliability score, off (0) by default\
+--not_found {T or F} : Saves a list of non-found entries, off (F) by default\
+--align {a, all, u, uncertain, n, none} : Outputs alignments of BLAST matches to query in all, uncertain or no cases, requires MAFFT to be installed, default is 'none'\
+--truncate {T or F} : Truncates the FASTA output to only contain the putative rRNA sequence found, on (T) by default\
+--guess_species {T or F} : Writes a species guess (which can be pretty far off) to the FASTA definition line, off (F) by default (depreciated option, use --taxonomy instead) [REMOVED]\
+--silent {T or F} : Supresses printing progress info to stderr, off (F) by default\
+--graph_scale {value} : Sets the scale of the graph output, if value is zero, a percentage view is shown, default = 0\
+--save_raw {T or F} : saves all raw data for searches etc. instead of removing it on finish, off (F) by default\
+
+-h : displays short usage information\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of Metaxa\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/metaxaQR$//;
+$input = "";
+$pairfile = "";
+$output = "metaxaQR_out";
+$inputFormat = "auto";
+$hmmscan = "";
+$profileDB = "";
+$blastDB = "";
+$type = "all";
+$gene = "ssu";
+$E = 1;
+$S = 12;
+$N = 2;
+$M = 5;
+$H = 50;
+$W = 8;
+$Q = 20;
+$C = 75;
+$quality_filter = 0;
+$quality_trim = 0;
+$filter_percent = 0.10;
+$trim_percent = 0.05;
+$ignore_paired_read = 0;
+$min_length = 30;
+$insert = 150;
+$priority = "score";
+$gap_penalty = "20I/2E+2I/1E";
+$masking = 0;
+$search_eval = "";
+$search_score = 0;
+$search_id = 0.5;
+$search_maxaccepts = 4;
+$search_maxrejects = 32;
+$scoring_model = "new";
+$allow_single_E = 1e-5;
+$allow_single_score = 20;
+$allow_reorder = 1;
+$complement = 1;
+$cpu = 1;
+$multi_thread = "unset";
+$heuristics = 1;
+$out_sum = 1;
+$out_date = 0;
+$out_graph = 1;
+$out_fasta = 1;
+$out_tax = 1;
+$out_table = 0;
+$out_not = 0;
+$out_align = "n";
+$split_pairs = 0;
+$tax_level = 0;
+$truncate = 1;
+$graph_scale = 0;
+$save_raw = 0;
+$debug = 0;
+$reference = "";
+$ref_id = 99;
+$mode = "m";
+$extract_only = 0;
+$classify_only = 0;
+$reset = 0;
+$tempDir = ".";
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input files from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-1") {   # Read input file from -1 flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-2") {   # Read input paired reads from -2 flag
+    $i++;
+    $pairfile = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+  if (($arg eq "-f") || ($arg eq "--format")) {   # Read input file type from -f (or --format) flag
+    $i++;
+    $inputFormat = @ARGV[$i];
+  }
+  if (($arg eq "-g") || ($arg eq "--gene")) {   # Read gene from -g (or --gene) flag
+    $i++;
+    $gene = lc(@ARGV[$i]);
+  }
+  if ($arg eq "--pairfile") {   # Read input paired reads from --pairfile flag
+    $i++;
+    $pairfile = @ARGV[$i];
+  }
+  if ($arg eq "-p") {   # Read profile database from -p flag
+    $i++;
+    $profileDB = @ARGV[$i];
+  }
+  if ($arg eq "-d") {   # Read database files from -d flag
+    $i++;
+    $blastDB = @ARGV[$i];
+  }
+  if ($arg eq "--hmmscan") {   # Read pre-computed hmmscan output file from --hmmscan flag ('undocumented' feature)
+    $i++;
+    $hmmscan = @ARGV[$i];
+  }
+  if ($arg eq "--date") {   # Determine whether or not to add a date stamp based on the --date flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_date = 0;
+    } else {
+      $out_date = 1;
+    }
+  }
+  if ($arg eq "--reset") {   # Reset or not?
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $reset = 0;
+    } else {
+      $reset = 1;
+    }
+  }
+  if ($arg eq "--temp") {   # Custom temp directory
+    $i++;
+    $tempDir = @ARGV[$i];
+  }
+  if ($arg eq "-x") {   # Run classification or not?
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $extract_only = 1;
+    } else {
+      $extract_only = 0;
+    }
+  }
+  if ($arg eq "-c") {   # Run classification only?
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $classify_only = 1;
+    } else {
+      $classify_only = 0;
+    }
+  }
+  if ($arg eq "--mode") {   # Set the operating mode based on the --mode flag
+    $i++;
+    $mode = lc(substr(@ARGV[$i],0,1));
+  }
+
+  if ($arg eq "-q") {   # Read quality value cutoff from -q flag
+    $i++;
+    $Q = @ARGV[$i];
+  }
+  if ($arg eq "--quality_filter") {   # Determine whether or not to quality filter FASTQ input
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $quality_filter = 1;
+    } else {
+      $quality_filter = 0;
+    }
+  }
+  if ($arg eq "--quality_trim") {   # Determine whether or not to quality trim FASTQ input
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $quality_trim = 1;
+    } else {
+      $quality_trim = 0;
+    }
+  }
+  if ($arg eq "--ignore_paired_end") {   # Determine whether or not to ignore if one read has bad quality in paired-end input
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $ignore_paired_end = 1;
+    } else {
+      $ignore_paired_end = 0;
+    }
+  }
+  if ($arg eq "--quality_percent") {   # Set the percent of the sequence that will discard/trim the sequence
+    $i++;
+    $trim_percent = @ARGV[$i];
+    $filter_percent = @ARGV[$i];
+  }
+  if ($arg eq "--trim_percent") {   # Set the percent of the sequence that will trim the sequence
+    $i++;
+    $trim_percent = @ARGV[$i];
+  }
+  if ($arg eq "--discard_percent") {   # Set the percent of the sequence that will discard the sequence
+    $i++;
+    $filter_percent = @ARGV[$i];
+  }
+  if ($arg eq "--min_length") {   # Set the minimum length of the output sequence
+    $i++;
+    $min_length = @ARGV[$i];
+  }
+  if ($arg eq "--insert") {   # Set the insert size between the paired-end sequences
+    $i++;
+    $insert = @ARGV[$i];
+  }
+
+  if ($arg eq "-t") {   # Select what types of rRNAs to look for using the -t flag
+    $i++;
+    $type = @ARGV[$i];
+  }
+  if ($arg eq "-E") {   # Set the E-value cutoff using the -E flag
+    $i++;
+    $E = @ARGV[$i];
+  }
+  if ($arg eq "-R") {   # Set the taxonomy reliability cutoff using the -R flag
+    $i++;
+    $C = @ARGV[$i];
+  }
+  if ($arg eq "-T") {   # Set the taxonomy identity cutoff vector using the -T flag
+    $i++;
+    $T = @ARGV[$i];
+  }
+  if ($arg eq "-S") {   # Set the score cutoff using the -S flag
+    $i++;
+    $S = @ARGV[$i];
+  }
+  if ($arg eq "-N") {   # Set the number of found domains cutoff using the -N flag
+    $i++;
+    $N = @ARGV[$i];
+  }
+  if ($arg eq "-M") {   # Set the number of top sequences to investigate in the BLAST search using the -M flag
+    $i++;
+    $M = @ARGV[$i];
+  }
+  if ($arg eq "-H") {   # Set the score that the HMMER-match is awarded using the -H flag
+    $i++;
+    $H = @ARGV[$i];
+  }
+  if ($arg eq "--selection_priority") {   # Set how to order the rRNA types using the --selection_priority flag
+    $i++;
+    $priority = @ARGV[$i];
+  }
+  if ($arg eq "--search_eval") {   # Set the E-value cutoff for the HMMER search using the --search_eval flag
+    $i++;
+    $search_eval = @ARGV[$i];
+    $search_score = "";   #  Turns off score cutoff
+  }
+  if ($arg eq "--search_score") {   # Set the score cutoff for the HMMER search using the --search_score flag
+    $i++;
+    $search_score = @ARGV[$i];
+    $search_eval = "";   #  Turns off E-value cutoff
+  }
+  if ($arg eq "--search_id") {   # Set the identity cutoff for Vsearch using the --search_id flag
+    $i++;
+    $search_id = @ARGV[$i];
+  }
+  if ($arg eq "--gap_penalty") {   # Set the gap penalties for Vsearch using the --gap_penalty flag
+    $i++;
+    $gap_penalty = @ARGV[$i];
+  }
+  if ($arg eq "--search_maxaccepts") {   # Set the maxium number of accepts for Vsearch using the --search_maxaccepts flag
+    $i++;
+    $search_maxaccepts = @ARGV[$i];
+  }
+  if ($arg eq "--search_maxrejects") {   # Set the maxium number of accepts for Vsearch using the --search_maxrejects flag
+    $i++;
+    $search_maxrejects = @ARGV[$i];
+  }
+  if ($arg eq "--search_wordsize") {   # Set the word size used in Vsearch using the -W flag
+    $i++;
+    $W = @ARGV[$i];
+  }
+  if ($arg eq "--masking") {   # Determine whether or not to mask sequences for Vsearch based on the --masking flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $masking = 1;
+    } else {
+      $masking = 0;
+    }
+  }
+  if ($arg eq "--allow_single_domain") {   # Determine whether or not to allow single domain matches based on the --allow_single_domain flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $allow_single_E = -1;   # Turns off single-domain matching by E-value
+      $allow_single_score = 0;   # Turns off single-domain matching by score
+    } else {
+      ($allow_single_E,$allow_single_score) = split(',',@ARGV[$i]);   # Turns on single-domain matching, assigning the first given value as the E-value cutoff, and the second as score cutoff
+    }
+  }
+  if ($arg eq "--allow_reorder") {   # Determine whether or not to allow the domains to be in the wrong order based on the --allow_reorder flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $allow_reorder = 1;
+    } else {
+      $allow_reorder = 0;
+    }
+  }
+  if ($arg eq "--complement") {   # Determine whether or not to scan the complementary strand of the input file based on the --complement flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $complement = 1;
+    } else {
+      $complement = 0;
+    }
+  }
+  if ($arg eq "--cpu") {   # Set the number of CPUs to use based on the --cpu flag
+    $i++;
+    $cpu = @ARGV[$i];
+  }
+  if ($arg eq "--multi_thread") {   # Determine whether or not to multi-thread the HMMER step based on the --multi_thread flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $multi_thread = 1;
+    } else {
+      $multi_thread = 0;
+    }
+  }
+  if ($arg eq "--heuristics") {   # Determine whether or not to use HMMER's heuristic filtering based on the --heuristics flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $heuristics = 1;
+    } else {
+      $heuristics = 0;
+    }
+  }
+
+  if ($arg eq "--reference") {   # Select a reference file using the --reference flag
+    $i++;
+    $reference = @ARGV[$i];
+  }
+  if ($arg eq "--ref_identity") {   # Set the reference identity cutoff using the --ref_identity flag
+    $i++;
+    $ref_id = @ARGV[$i];
+  }
+
+  if ($arg eq "--summary") {   # Determine whether or not to output a summary based on the --summary flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sum = 1;
+    } else {
+      $out_sum = 0;
+    }
+  }
+  if ($arg eq "--graphical") {   # Determine whether or not to output a graphical representation of matches based on the --graphical flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_graph = 1;
+    } else {
+      $out_graph = 0;
+    }
+  }
+  if ($arg eq "--fasta") {   # Determine whether or not to output FASTA-files based on the --fasta flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_fasta = 1;
+    } else {
+      $out_fasta = 0;
+    }
+  }
+  if ($arg eq "--split_pairs") {   # Determine whether or not to split paired output FASTA based on the --split_pairs flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $split_pairs = 1;
+    } else {
+      $split_pairs = 0;
+    }
+  }
+  if ($arg eq "--table") {   # Determine whether or not to output tables of all potential matches based on the --table flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_table = 1;
+    } else {
+      $out_table = 0;
+    }
+  }
+  if ($arg eq "--taxonomy") {   # Determine whether or not to output tables of taxonomic preditions based on the --taxonomy flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_tax = 1;
+    } else {
+      if (@ARGV[$i] eq "complete") {   # Check for complete taxonomy
+	$out_tax = 2;
+      } else {
+	$out_tax = 0;
+      }
+    }
+  }
+
+  if ($arg eq "--taxlevel") {   # Set the forced taxonomy classification level
+    $i++;
+    $tax_level = @ARGV[$i];
+  }
+
+  if ($arg eq "--not_found") {   # Determine whether or not to output a list of sequences that are not rRNAs based on the --not_found flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_not = 1;
+    } else {
+      $out_not = 0;
+    }
+  }
+  if ($arg eq "--align") {   # Determine for what sequences alignments should be made based on the --align flag
+    $i++;
+    $out_align = substr(@ARGV[$i],0,1);
+  }
+  if ($arg eq "--guess_species") {   # Determine whether or not to guess species based on the --guess_species flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $guess_species = 1;
+    } else {
+      $guess_species = 0;
+    }
+  }
+  if ($arg eq "--truncate") {   # Determine whether or not to cut out the rRNA part of the sequence based on the --truncate flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $truncate = 1;
+    } else {
+      $truncate = 0;
+    }
+  }
+  if ($arg eq "--silent") {   # Determine whether or not to output anything to the screen based on the --silent flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $silent = 1;
+    } else {
+      $silent = 0;
+    }
+  }
+  if ($arg eq "--graph_scale") {   # Set the scale of the graphical output based on the --graph_scale flag
+    $i++;
+    $graph_scale = @ARGV[$i];
+  }
+  if ($arg eq "--save_raw") {   # Determine whether or not to save all the raw intermediate data based on the --save_raw flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $save_raw = 1;
+    } else {
+      $save_raw = 0;
+    }
+  }
+
+  ## If "-h" is among the options, output short usage data and options
+  if ($arg eq "-h") {
+    print "Usage: metaxaQR -i <input file> -o <output file> --cpu <number of CPUs to use>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--help" is among the options, output usage data and all options
+  if ($arg eq "--help") {
+    print "Usage: metaxaQR -i <input file> -o <output file>\nOptions:$options";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit Metaxa
+  }
+
+  if ($arg eq "--debug") {   # Run Metaxa in debug mode
+    $debug = 1;
+  }
+}
+
+## Setup some variables dependent on input
+
+if ($hmmscan ne "") {   # If a pre-computed hmmscan output is supplied
+  $output = $hmmscan;   # Then set the base of the output directory name to be the same as that hmmscan output file
+}
+
+if ($multi_thread eq "unset") {   # If the multi-thread option is not set
+  if ($cpu > 1) {   # Then if the number of CPUs used > 1, then multi-thread HMMER searches
+    $multi_thread = 1;
+  } else {   # Else, run HMMER searches sequentially on one CPU
+    $multi_thread = 0;
+  }
+}
+
+if (($classify_only == 1) && ($extract_only == 1)) {
+  print STDERR "FATAL ERROR :: Cannot turn off both extraction and classification.\
+This error is fatal, and Metaxa will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($tempDir =~ m/ /) {
+  print STDERR "FATAL ERROR :: The path to the temporary directory cannot have spaces in it.\
+This error is fatal, and Metaxa will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+
+$gene = uc($gene);
+
+$trypath = "$bindir\metaxaQR_db/$gene";
+chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+  $trypath = "/dbs/metaxaQR_db/$gene";
+  chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+    $homeDir = $ENV{"HOME"};
+    $trypath = "$homeDir/dbs/metaxaQR_db/$gene";
+    chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+    if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+      $trypath = "$homeDir/metaxaQR_db/$gene";
+      chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+      if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+	$trypath = "$homeDir/bin/metaxaQR_db/$gene";
+	chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+	if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+	  $trypath = "$bindir\metaxaQR_db/$gene";
+	}
+      }
+    }
+  }
+}
+
+if ($profileDB eq "") {  # If no profile DB has been specified
+  $profileDB = "$trypath/HMMs";  # Set the profile DB to the gene path
+}
+if ($blastDB eq "") {  # If no blast DB has been specified
+  $blastDB = "$trypath/mqr";  # Set the blast DB to the gene path
+}
+
+# $quality_percent = $quality_percent / 100;  # Create a ratio of the quality percentage
+
+if ($out_date == 1) {   # If a date and time stamp should be supplied
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);   # Get the date and time
+  $year = $year + 1900;   # Format the year
+  $mon = $mon + 1;   # Format the month
+  if ($mon < 10) {   # Add a zero to the month, if needed
+    $mon = "0" . $mon;
+  }
+  if ($mday < 10) {   # Add a zero to the day, if needed
+    $mday = "0" . $mday;
+  }
+  if ($hour < 10) {   # Add a zero to the hour, if needed
+    $hour = "0" . $hour;
+  }
+  if ($min < 10) {   # Add a zero to the minute, if needed
+    $min = "0" . $min;
+  }
+  $outputDate = ".$year\-$mon\-$mday\_$hour.$min";   # Create a date and time stamp
+  $outputDate =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+  $output = $output . $outputDate;   # Add the date and time stamp top the output base name
+}
+
+$inputFileName = $input;
+$inputFileName =~ s-^.*/--;
+
+$tempName = "metaxa_temp_directory__$output";   # Setup a temporary directory variable
+$tempName =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+$tempDir = $tempDir . "/" . $tempName;
+
+## Check for binaries
+chomp($path = `which vsearch`);   # Get the path for vsearch
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate Vsearch binary! It seems that vsearch is not installed properly.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which $bindir/get_fasta`);   # Get the path for get_fasta
+
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate the get_fasta subscript! It seems that MetaxaQR is not installed properly.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which hmmpress`);   # Get the path for hmmpress
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate HMMER binaries! It seems that hmmpress is not installed properly.\
+Consult the manual for installation instructions. Note that HMMER3 is required. Previous HMMER-versions will not work.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which hmmsearch`);   # Get the path for hmmsearch
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate HMMER binaries! It seems that hmmscan is not installed properly.\
+Consult the manual for installation instructions. Note that HMMER3 is required. Previous HMMER-versions will not work.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which mafft`);   # Get the path for mafft
+if ($path eq "") {   # If the path is empty, then show an error message
+  print STDERR "ERROR :: Could not locate MAFFT binaries! Maybe MAFFT is not installed properly?\
+Consult the manual for installation instructions.\
+This error is not fatal, but will prevent MetaxaQR from automatically creating alignments.\
+Automatic sequence alignment has now been turned off completely.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  $out_align = "n";   # Turn off automatic sequence aligning
+}
+
+## Check for databases
+chomp($errormsg = `ls $profileDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: The specified profile database for gene $gene could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($errormsg = `ls $blastDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the BLAST database
+if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: The specified classification database for gene $gene could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($input ne "") {  # If an input file is specified
+  chomp($errormsg = `ls $input* 2>&1 1>/dev/null`);   # Get the error msg when looking for the input file
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+    print STDERR "FATAL ERROR :: The specified input file could not be found.\
+MetaxaQR will now abort.\n";
+    print STDERR "-----------------------------------------------------------------\n";
+    exit;
+  }
+}
+
+
+## Create a summary file
+$now = localtime;
+if ($out_sum == 1) {   # If summary output is on
+  open (SUMMARY, ">$output.summary.txt");   # Create the summary file
+  print SUMMARY "MetaxaQR run started at $now.\n";   # Output the starting time for the analysis
+  print SUMMARY "-----------------------------------------------------------------\n";
+  close (SUMMARY);   # Close summary file
+}
+
+## Create a temporary directory for Metaxa
+`mkdir $tempDir`;
+$testTemp = `ls $tempDir 2>&1`;
+if ($testTemp =~ m/No such file or directory/) {
+  print STDERR "ERROR :: The temporary directory could not be written! MetaxaQR will abort.\n";
+  exit;
+}
+
+## If input file format should be guessed, try to guess it!
+if (lc(substr($inputFormat,0,1)) eq "a") {  # If the format should be guessed
+  chomp(@inputHeader = `head -10 $input`);  # Read the first ten lines of the input file
+  foreach $line (@inputHeader) {  # Go through them line by line
+    chomp($line);  # Remove the newline character
+    if ($line eq "") {  # If the line is empty
+      next;  # Proceed to the next line
+    }
+    if (substr($line, 0, 1) eq ">") {  # If the line starts with a ">"
+      if ($pairfile ne "") {
+	$inputFormat = "pa";  # Assume paired-end FASTA
+      } else {
+	$inputFormat = "f";  # Assume FASTA format
+      }
+      last;  # Exit the loop
+    }
+    if (substr($line, 0, 1) eq "@") {  # If the line starts with a "@"
+      if ($pairfile ne "") {
+	$inputFormat = "p";  # Assume paired-end FASTQ format
+      } else {
+	if (substr(substr($input,-8),0,3) eq "_1.") {  # If the input file name ends with "_1.fastq"
+	  $pairGuess = $input;
+	  $pairGuess =~ s/_1.fastq/_2.fastq/;  # Make a guess of the name of the paired reads file
+	  chomp($pairExists = `head -10 $pairGuess`);  # Read the first ten lines of the guessed pair file (if it exists)
+	  if ($pairExists ne "") {  #  Pair file seems to exist
+	    $inputFormat = "p";  # Assume paired-end FASTQ format
+	    $pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
+	  } else {
+	    $inputFormat = "q";  # Assume FASTQ format
+	  }
+	} else {
+	  $inputFormat = "q";  # Assume FASTQ format
+	}
+      }
+      last;  # Exit the loop
+    }
+  }
+} else {
+  if (($inputFormat eq "f") || ($inputFormat eq "fasta")) {  # If input format is specified as FASTA
+    $inputFormat = "f";  # Assume FASTA format
+  }
+  if (($inputFormat eq "q") || ($inputFormat eq "fastq")) {  # If input format is specified as FASTQ
+    $inputFormat = "q";  # Assume FASTQ format
+  }
+  if (substr($inputFormat,0,1) eq "p") {  # If input format is specified as paired-end
+    $inputFormat = "p";  # Assume Paired-end FASTQ format
+    if ($pairfile ne "") {
+      $inputFormat = "p";  # Assume paired-end FASTQ format
+    } else {
+      $pairGuess = $input;
+      $pairGuess =~ s/_1.fastq/_2.fastq/;  # Make a guess of the name of the paired reads file
+      chomp($pairExists = `head -10 $pairGuess`);  # Read the first ten lines of the guessed pair file (if it exists)
+      if ($pairExists ne "") {  #  Pair file seems to exist
+	$pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
+      } else {
+	print STDERR "FATAL ERROR :: The specified paired-end input file could not be found.\
+Metaxa will now abort.\n";
+	print STDERR "-----------------------------------------------------------------\n";
+	exit;
+      }
+    }
+  }
+}
+
+## Process FASTQ input
+
+$seqCount = 0;
+$badFirst = 0;
+$badSecond = 0;
+$bothBad = 0;
+$bothGood = 0;
+$discardedReads = 0;
+
+if ($inputFormat eq "q") {  # Input format is FASTQ
+  if ($mode ne "m") {
+    print STDERR "FASTQ input can only be used in the metagenomic mode! MetaxaQR will now abort.\n";
+    exit;
+  }
+
+  $fastqLine = 0;  # Reset the line counter
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Analysing, filtering and converting FASTQ input file...\n";
+  }
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQA, "zcat $input |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQA, "bzcat $input |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQA, "unzip -c $input |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+  if (substr($input, -5) eq ".dsrc") {
+    open (FASTQA, "dsrc -s d $input |");  # Open the dsrc-compressed FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQA, $input);  # Open the FASTQ file
+  }
+  open (FASTA, ">$tempDir/$inputFileName.fasta");  # Open the FASTA output file (for saving converted sequences)
+  while ($lineA = <FASTQA>) {  # Go through all lines of the FASTQ file
+    chomp($lineA);  # Remove the newline character from the input line
+    $fastqLine++;  # Add one to the line counter
+    if (substr($lineA,0,1) eq "@") {  # If the line begins with a "@"
+      if ($fastqLine == 1) {  # If this is the first line of the entry
+	$header = ">" . substr($lineA,1);  # Convert header to FASTA-format
+	$seqCount++;
+	if (($seqCount / 1000000) == int($seqCount / 1000000)) {
+	  $now = localtime;
+	  print STDERR "$now : Processed $seqCount reads...\n";
+      }
+      }
+    }
+    if ($fastqLine == 2) {  # If this is the second line of the entry
+      $seqA = uc($lineA);  # Save the nucleotide sequence
+    }
+    if ($fastqLine == 4) {  # If this is the fourth line of the entry
+      $fastqLine = 0;  # Reset the line counter
+      $qualA = $lineA;  # Get the quality scores
+
+      $badbasesA = 0;		 # Reset the bad base counter
+      $trimSeqA = length($seqA);	 # Reset the trim counter
+      $skipSeqA = 0;	       # Assume sequence should not be skipped
+      for ($r = 0; $r < length($qualA); $r++) { # Go through the quality scores
+	$num = ord(substr($qualA,$r,1)); # Convert the score character into a number
+	$illuminaQ = $num - 64;	       # Convert to Illumina scores
+	if ($illuminaQ < $Q) {	       # If score is lower than cutoff
+	  $badbasesA++;		# Add one to the bad base counter
+	  if (($quality_filter == 1) || ($quality_trim == 1)) { # If quality filtering and/or trimming should be used
+	    if ($r > $min_length) { # If an appropriate length of the input sequence has been scanned
+	      if ($badbasesA/$r > $trim_percent) { # Has we reached the maximal allowed bad quality of the read?
+		if ($trimSeqA > $r) { # Have we reached it previously?
+		  $trimSeqA = $r;	# If not so, set the trimming to this base
+		}
+	      }
+	    }
+	    if ($r == $min_length) { # If the min length has just been reached
+	      if ($badbasesA/$r > $filter_percent) { # Have we reached the maximal allowed bad quality of the read?
+		$skipSeqA = 1;	# Skip this sequence
+		last;
+	      }
+	    }
+	  }
+	}
+      }
+      if ($quality_filter == 1) { # If quality filtering is on
+	if ($badbasesA / $trimSeqA > $filter_percent) { # If this read reached the quality threshold
+	  $skipSeqA = 1;	# Skip this sequence
+	}
+      }
+      
+      if ($skipSeqA == 0) {  # If sequence should not be skipped
+	print FASTA $header . "\n";  # Write its header to the FASTA file
+	print FASTA substr($seqA, 0, $trimSeqA) . "\n";  # Write its sequence to the FASTA file
+      }
+      
+      if ($skipSeqA == 1) {
+	$badFirst++;
+	$discardedReads++;
+      }
+    }
+  }
+  close (FASTQA);  # Close FASTQ input
+  close (FASTA);  # Close FASTA output
+  $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+
+  
+  $keptReads = $seqCount - $discardedReads;
+  $now = localtime;
+  print STDERR "Processed $seqCount reads.\n";
+  print STDERR "Discarded reads:                 $discardedReads\n";
+  print STDERR "Kept reads (high quality):       $keptReads\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  if ($out_sum == 1) {   # If summary output is on
+    open (SUMMARY, ">>$output.summary.txt");   # Open the summary file
+    print SUMMARY "Processed $seqCount reads.\n";
+    print SUMMARY "Discarded reads:                 $discardedReads\n";
+    print SUMMARY "Kept reads (high quality):       $keptReads\n";
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);
+  }
+}
+
+## Process paired-end FASTQ input
+if ($inputFormat eq "p") {  # Input format is paired-end FASTQ
+  if ($mode ne "m") {
+    print STDERR "FASTQ input can only be used in the metagenomic mode! MetaxaQR will now abort.\n";
+    exit;
+  }
+
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Analysing, filtering and converting paired-end FASTQ input file...\n";
+  }
+  $fastqLine = 0;  # Reset the line counter
+
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQA, "zcat $input |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQA, "bzcat $input |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQA, "unzip -c $input |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+  if (substr($input, -5) eq ".dsrc") {
+    open (FASTQA, "dsrc -s d $input |");  # Open the dsrc-compressed FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQA, $input);  # Open the FASTQ file
+  }
+
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQB, "zcat $pairfile |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQB, "bzcat $pairfile |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQB, "unzip -c $pairfile |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+  if (substr($input, -5) eq ".dsrc") {
+    open (FASTQB, "dsrc -s d $pairfile |");  # Open the dsrc-compressed FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQB, $pairfile);  # Open the FASTQ file
+  }
+  open (FASTA, ">$tempDir/$inputFileName.fasta");  # Open the FASTA output file (for saving converted sequences)
+  while ($lineA = <FASTQA>) {  # Go through all lines of the FASTQ file
+    chomp($lineA);  # Remove the newline character from the input line
+    chomp($lineB = <FASTQB>);  # Read the corresponding line in the pair file
+    $fastqLine++;  # Add one to the line counter
+    if (substr($lineA,0,1) eq "@") {  # If the line begins with a "@"
+      if ($fastqLine == 1) {  # If this is the first line of the entry
+	$header = ">" . substr($lineA,1);  # Convert header to FASTA-format
+	$seqCount++;
+	if (($seqCount / 1000000) == int($seqCount / 1000000)) {
+	  $now = localtime;
+	  print STDERR "$now : Processed $seqCount read pairs...\n";
+	}
+      }
+    }
+    if ($fastqLine == 2) {  # If this is the second line of the entry
+      $seqA = uc($lineA);  # Save the nucleotide sequence
+      $seqB = uc($lineB);  # Get the second nucelotide sequence
+      $seqB =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/;   # Replace all characters with its complementary base
+    }
+    if ($fastqLine == 4) {  # If this is the fourth line of the entry
+      $fastqLine = 0;  # Reset the line counter
+      $qualA = $lineA;  # Get the quality scores
+      $qualB = $lineB;  # Get the quality scores
+ 
+      ## Run quality check for read 1
+      $badbasesA = 0;		 # Reset the bad base counter
+      $trimSeqA = length($seqA);	 # Reset the trim counter
+      $skipSeqA = 0;	       # Assume sequence should not be skipped
+      for ($r = 0; $r < length($qualA); $r++) { # Go through the quality scores
+	$num = ord(substr($qualA,$r,1)); # Convert the score character into a number
+	$illuminaQ = $num - 64;	       # Convert to Illumina scores
+	if ($illuminaQ < $Q) {	       # If score is lower than cutoff
+	  $badbasesA++;		# Add one to the bad base counter
+	  if (($quality_filter == 1) || ($quality_trim == 1)) { # If quality filtering and/or trimming should be used
+	    if ($r > $min_length) { # If an appropriate length of the input sequence has been scanned
+	      if ($badbasesA/$r > $trim_percent) { # Has we reached the maximal allowed bad quality of the read?
+		if ($trimSeqA > $r) { # Have we reached it previously?
+		  $trimSeqA = $r;	# If not so, set the trimming to this base
+		}
+	      }
+	    }
+	    if ($r == $min_length) { # If the min length has just been reached
+	      if ($badbasesA/$r > $filter_percent) { # Have we reached the maximal allowed bad quality of the read?
+		$skipSeqA = 1;	# Skip this sequence
+		last;
+	      }
+	    }
+	  }
+	}
+      }
+      if ($quality_filter == 1) { # If quality filtering is on
+	if ($badbasesA / $trimSeqA > $filter_percent) { # If this read reached the quality threshold
+	  $skipSeqA = 1;	# Skip this sequence
+	}
+      }
+      
+      ## Run quality check for paired read
+      $badbasesB = 0;		 # Reset the bad base counter
+      $trimSeqB = length($seqB);	 # Reset the trim counter
+      $skipSeqB = 0;	       # Assume sequence should not be skipped
+      for ($r = 0; $r < length($qualB); $r++) { # Go through the quality scores
+	$num = ord(substr($qualB,$r,1)); # Convert the score character into a number
+	$illuminaQ = $num - 64;	       # Convert to Illumina scores
+	if ($illuminaQ < $Q) {	       # If score is lower than cutoff
+	  $badbasesB++;		# Add one to the bad base counter
+	  if (($quality_filter == 1) || ($quality_trim == 1)) { # If quality filtering and/or trimming should be used
+	    if ($r > $min_length) { # If an appropriate length of the input sequence has been scanned
+	      if ($badbasesB/$r > $trim_percent) { # Has we reached the maximal allowed bad quality of the read?
+		if ($trimSeqB > $r) { # Have we reached it previously?
+		  $trimSeqB = $r;	# If not so, set the trimming to this base
+		}
+	      }
+	    }
+	    if ($r == $min_length) { # If the min length has just been reached
+	      if ($badbasesB/$r > $filter_percent) { # Have we reached the maximal allowed bad quality of the read?
+		$skipSeqB = 1;	# Skip this sequence
+		last;
+	      }
+	    }
+	  }
+	}
+      }
+      if ($quality_filter == 1) { # If quality filtering is on
+	if ($badbasesB / $trimSeqB > $filter_percent) { # If this read reached the quality threshold
+	  $skipSeqB = 1;	# Skip this sequence
+	}
+      }
+      
+      if ($skipSeqA == 1) {
+	$badFirst++;
+      }
+      if ($skipSeqB == 1) {
+	$badSecond++;
+      }
+      if (($skipSeqA == 1) && ($skipSeqB == 1)) {
+	$bothBad++;
+      }
+      if (($skipSeqA == 0) && ($skipSeqB == 0)) {
+	$bothGood++;
+      }
+
+      $actualInsert = $insert + length($seqA) - $trimSeqA + length($seqB) - $trimSeqB;
+      if ($ignore_paired_read == 1) {
+	if (($skipSeqA == 0) || ($skipSeqB == 0)) { # If any of the sequences should not be skipped
+	  print FASTA $header . " " . "&PAIR&TRIMA:" . $trimSeqA . "&TRIMB:" . $trimSeqB . "&INSERT:" . $actualInsert ."&\n";  # Write its header to the FASTA file
+	  print FASTA substr($seqA, 0, $trimSeqA) . reverse(substr($seqB, 0, $trimSeqB)) .  "\n";  # Write its sequence to the FASTA file
+	} else {
+	  $discardedReads++;
+	}
+      } else {
+	if (($skipSeqA == 0) && ($skipSeqB == 0)) { # If both sequences should not be skipped
+	  print FASTA $header . " " . "&PAIR&TRIMA:" . $trimSeqA . "&TRIMB:" . $trimSeqB . "&INSERT:" . $actualInsert ."&\n";  # Write its header to the FASTA file
+	  print FASTA substr($seqA, 0, $trimSeqA) . reverse(substr($seqB, 0, $trimSeqB)) .  "\n";  # Write its sequence to the FASTA file
+	} else {
+	  $discardedReads++;
+	}
+      }
+    }
+  }
+
+  close (FASTQA);  # Close FASTQ input
+  close (FASTQB);  # Close FASTQ input
+  close (FASTA);  # Close FASTA output
+  $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+
+  $keptReads = $seqCount - $discardedReads;
+  $now = localtime;
+  print STDERR "Processed $seqCount sequence pairs and discarded $discardedReads pairs of reads.\n";
+  print STDERR "Low quality first reads:               $badFirst\n";
+  print STDERR "Low quality second reads:              $badSecond\n";
+  print STDERR "Pairs with both reads of low quality:  $bothBad\n";
+  print STDERR "Pairs with both reads of good quality: $bothGood\n";
+  print STDERR "Discarded read pairs:                  $discardedReads\n";
+  print STDERR "Kept read pairs (high quality):        $keptReads\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  if ($out_sum == 1) {   # If summary output is on
+    open (SUMMARY, ">>$output.summary.txt");   # Open the summary file
+    print SUMMARY "Processed $seqCount sequence pairs and discarded $discardedReads pairs of reads.\n";
+    print SUMMARY "Low quality first reads:               $badFirst\n";
+    print SUMMARY "Low quality second reads:              $badSecond\n";
+    print SUMMARY "Pairs with both reads of low quality:  $bothBad\n";
+    print SUMMARY "Pairs with both reads of good quality: $bothGood\n";
+    print SUMMARY "Discarded read pairs:                  $discardedReads\n";
+    print SUMMARY "Kept read pairs (high quality):        $keptReads\n";
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);
+  }
+}
+
+
+## Process paired-end FASTA input
+if ($inputFormat eq "pa") {  # Input format is paired-end FASTA
+  if ($mode ne "m") {
+    print STDERR "Paired-end input can only be used in the metagenomic mode! MetaxaQR will now abort.\n";
+    exit;
+  }
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-formatting paired-end FASTA input file...\n";
+  }
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQA, "zcat $input |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQA, "bzcat $input |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQA, "unzip -c $input |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQA, $input);  # Open the FASTQ file
+  }
+
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQB, "zcat $pairfile |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQB, "bzcat $pairfile |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQB, "unzip -c $pairfile |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQB, $pairfile);  # Open the FASTQ file
+  }
+  chomp($lineB = <FASTQB>);  # Read the first line in the second file (to get rid of the first ">" line)
+  open (FASTA, ">$tempDir/$inputFileName.fasta");  # Open the FASTA output file (for saving converted sequences)
+  while ($lineA = <FASTQA>) {  # Go through all lines of the FASTQ file
+    chomp($lineA);  # Remove the newline character from the input line
+    $fastqLine++;  # Add one to the line counter
+    if ((substr($lineA,0,1) eq ">") || eof(FASTQA)) {  # If the line begins with a ">"
+      if ($seqA ne "") {  # If this is not the first line of the first file
+	while ($lineB = <FASTQB>) {   # Read from the corresponding file...
+	  if (substr($lineB,0,1) eq ">") {  # ... until a line beginning with ">" is reached
+	    last;
+	  }
+	  $seqB = $seqB . uc($lineB);  # Get the second nucelotide sequence
+	}
+	$seqB =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/;   # Replace all characters with its complementary base
+	
+	## Save sequences
+	$trimSeqA = length($seqA);
+	$trimSeqB = length($seqB);
+	print FASTA $header . " " . "&PAIR&TRIMA:" . $trimSeqA . "&TRIMB:" . $trimSeqB . "&INSERT:" . $insert ."&\n";  # Write its header to the FASTA file
+	print FASTA substr($seqA, 0, $trimSeqA) . reverse(substr($seqB, 0, $trimSeqB)) .  "\n";  # Write its sequence to the FASTA file
+	
+      }
+      $fastqLine = 1;  # Reset the line counter
+      $header = $lineA;  # Read the header
+      $seqA = "";  # Empty sequence A
+      $seqB = "";  # Empty sequence B
+      $seqCount++;
+      if (($seqCount / 1000000) == int($seqCount / 1000000)) {
+	$now = localtime;
+	print STDERR "$now : Processed $seqCount read pairs...\n";
+      }
+    }
+    if ($fastqLine > 1) {  # If this is not the first line of the entry
+      $seqA = $seqA . uc($lineA);  # Save the nucleotide sequence
+    }
+  }
+
+  close (FASTQA);  # Close FASTQ input
+  close (FASTQB);  # Close FASTQ input
+  close (FASTA);  # Close FASTA output
+  $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+
+  $keptReads = $seqCount - $discardedReads;
+  $now = localtime;
+  print STDERR "Processed $seqCount sequence pairs and discarded $discardedReads pairs of reads.\n";
+  print STDERR "Low quality first reads:               $badFirst\n";
+  print STDERR "Low quality second reads:              $badSecond\n";
+  print STDERR "Pairs with both reads of low quality:  $bothBad\n";
+  print STDERR "Pairs with both reads of good quality: $bothGood\n";
+  print STDERR "Discarded read pairs:                  $discardedReads\n";
+  print STDERR "Kept read pairs (high quality):        $keptReads\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  if ($out_sum == 1) {   # If summary output is on
+    open (SUMMARY, ">>$output.summary.txt");   # Open the summary file
+    print SUMMARY "Processed $seqCount sequence pairs and discarded $discardedReads pairs of reads.\n";
+    print SUMMARY "Low quality first reads:               $badFirst\n";
+    print SUMMARY "Low quality second reads:              $badSecond\n";
+    print SUMMARY "Pairs with both reads of low quality:  $bothBad\n";
+    print SUMMARY "Pairs with both reads of good quality: $bothGood\n";
+    print SUMMARY "Discarded read pairs:                  $discardedReads\n";
+    print SUMMARY "Kept read pairs (high quality):        $keptReads\n";
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);
+  }
+}
+
+## Process single FASTA input
+if ($inputFormat eq "f") {  # Input format is single FASTA sequences
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Uncompressing FASTA input file...\n";
+    }
+    `zcat $input > $tempDir/$inputFileName.fasta`; # Uncompress gzipped FASTA file
+    $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Uncompressing FASTA input file...\n";
+    }
+    `bzcat $input > $tempDir/$inputFileName.fasta`; # Uncompress bzipped FASTA file
+    $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Uncompressing FASTA input file...\n";
+    }
+    `unzip -c $input > $tempDir/$inputFileName.fasta`; # Uncompress zipped FASTA file
+    $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+  }
+}
+
+## Pre-process FASTA input for genomic/auto mode
+if ($mode ne "m") {  # Mode is not metagenomic
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-formatting FASTA input file...\n";
+  }
+  $fileopen = 0;
+  if (substr($input, -3) eq ".gz") {
+    open (FASTQA, "zcat $input |");  # Open the gzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    open (FASTQA, "bzcat $input |");  # Open the bzipped FASTQ file
+    $fileopen = 1;
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    open (FASTQA, "unzip -c $input |");  # Open the zipped FASTQ file
+    $fileopen = 1;
+  }
+  if (substr($input, -5) eq ".dsrc") {
+    open (FASTQA, "dsrc -s d $input |");  # Open the dsrc-compressed FASTQ file
+    $fileopen = 1;
+  }
+
+  if ($fileopen == 0) {
+    open (FASTQA, $input);  # Open the FASTQ file
+  }
+  open (FASTA, ">$tempDir/$inputFileName.fasta");  # Open the FASTA output file (for saving converted sequences)
+  $totalFrg = 0;
+  while ($lineA = <FASTQA>) {  # Go through all lines of the FASTA file
+    chomp($lineA);  # Remove the newline character from the input line
+    if ((substr($lineA,0,1) eq ">") || eof(FASTQA)) {  # If the line begins with a ">"
+      if (eof(FASTQA)) {
+	$seqA = $lineA;
+      }
+      if (($seqA ne "") || (eof(FASTQA))) {  # If this is not the first line of the first file
+	$seqCount++;
+	## Save sequences
+	$lenSeqA = length($seqA);
+	$seqID = $header;
+	$seqID =~ s/ .*//;
+	if (($mode eq "g") && ($lenSeqA > 2500)) {
+	  $frg = 0;
+	  for ($b = 0; $b < $lenSeqA - 2499; $b = $b + 2500) {
+	    $frg++;
+	    $totalFrg++;
+	    $cutStart = $b;
+	    $cutEnd = $b + 5000;
+	    $cutLen = 5000;
+	    if ($cutEnd > $lenSeqA) {
+	      $cutEnd = $lenSeqA;
+	      $cutLen = $cutEnd - $cutStart;
+	    }
+	    
+	    print FASTA $seqID . "_FRAGMENT_" . $frg . ":" . $cutStart . "-" . $cutEnd . "\n";  # Write the header to the FASTA file
+	    print FASTA substr($seqA, $cutStart, $cutLen) . "\n";  # Write the sequence to the FASTA file
+	    
+	    if (($totalFrg / 1000000) == int($totalFrg / 1000000)) {
+	      $now = localtime;
+	      print STDERR "$now : Processed $seqCount sequences, producing $totalFrg fragments...\n";
+	    }
+	  }
+	} else {
+	  print FASTA $seqID . "_COMPLETE\n";  # Write the header to the FASTA file
+	  print FASTA $seqA . "\n";  # Write the sequence to the FASTA file
+	}
+      }
+      $header = $lineA;  # Read the header
+      $seqA = "";  # Empty sequence A
+    } else {
+      $seqA = $seqA . uc($lineA);  # Save the nucleotide sequence
+    }
+  }
+
+  close (FASTQA);  # Close FASTQ input
+  close (FASTA);  # Close FASTA output
+  $input = "$tempDir/$inputFileName.fasta";  # Change the input for metaxa_x and metaxa_c
+
+  $now = localtime;
+  print STDERR "Processed $seqCount sequences, producing $totalFrg read fragments.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  if ($out_sum == 1) {   # If summary output is on
+    open (SUMMARY, ">>$output.summary.txt");   # Open the summary file
+    print SUMMARY "Processed $seqCount sequences, producing $totalFrg read fragments.\n";
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);
+  }
+}
+
+
+if ($classify_only == 0) {  ## If not only classification should be run
+  ## Get the current time and output starting message for the Metaxa Extractor
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Starting MetaxaQR Extractor...\n";
+    print STDERR "-----------------------------------------------------------------\n";
+  }
+  
+  if ($hmmscan eq "") {   # If no pre-computed hmmscan file is supplied, call metaxa_x (the Metaxa Extractor)
+    if ($search_score eq "") {   # If E-value cutoff is used instead of score cutoff, use this command:
+      `$bindir/metaxaQR_x -i "$input" -o "$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_eval "$search_eval" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
+    } else {   # If score cutoff is used instead of E-value cutoff, use this command:
+      `$bindir/metaxaQR_x -i "$input" -o "$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder" --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_score "$search_score" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
+    }
+  } else {   # If a pre-computed hmmscan file is supplied, send it on to metaxa_x (the Metaxa Extractor)
+    `$bindir/metaxaQR_x -i "$input" --hmmscan $hmmscan -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
+  }
+} else {  ## Convert input files for use with classifier
+  $H = 0;
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Preparing input files for classification...\n";
+  }
+  open (INPUT, $input);
+  open (FASTA, ">$output.extraction.fasta");   # Create a FASTA output file for found sequences
+  $seqDNA = "";
+  while ($line = <INPUT>) {
+    chomp($line);
+    if (substr($line, 0, 1) eq ">") {
+      if ($seqDNA ne "") {
+	$seqDNALength = length($seqDNA);
+	print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
+	print FASTA  $seqDNA . "\n";   # Write DNA sequence
+      }
+      $seqID = substr($line,1,60);
+      $seqDNA = "";
+    } else {
+      $seqDNA = $seqDNA . $line;
+    }
+  }
+  if ($seqDNA ne "") {
+    $seqDNALength = length($seqDNA);
+    print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
+    print FASTA  $seqDNA . "\n";   # Write DNA sequence
+  }
+  close INPUT;
+  close FASTA;
+}
+
+
+if ($extract_only == 0) {  ## If not only extraction should be run
+  ## Get the current time and output starting message for the Metaxa Classifier
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "-----------------------------------------------------------------\n";
+    print STDERR "$now : Starting MetaxaQR Classifier...\n";
+    print STDERR "-----------------------------------------------------------------\n";
+  }
+  
+  ## Start the Metaxa Classifier (metaxa_c)
+  `$bindir/metaxaQR_c -i "$output.extraction.fasta" -o "$output" -d "$blastDB" -t "$type" -g "$gene" -E "$E" -S "$S" -M "$M" -H "$H" -R "$C" --search_id "$search_id" --gap_penalty "$gap_penalty" --masking "$masking" --search_maxaccepts "$search_maxaccepts" --search_maxrejects "$search_maxrejects" --search_wordsize "$W" --cpu "$cpu" --summary "$out_sum" --fasta "$out_fasta" --table "$out_table" --align "$out_align" --not_found "$out_not" --taxonomy "$out_tax" --taxlevel "$tax_level" --silent "$silent" --reference "$reference" --ref_identity "$ref_id" --mode "$mode" --split_pairs "$split_pairs" --temp "$tempDir" --pipeline`;
+
+  
+}
+
+## Save raw data
+if ($save_raw == 1) {   # If the raw data should be saved
+  `mv $tempDir $output\_metaxa_raw_output`;   # Change the name of the temporary directory to ..._metaxa_raw_output
+} else {   # Else, discard the raw data
+  `rm -rf $tempDir`;   # Remove the temporary directory
+}
+
+## Get the current time and output a finished message
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "-----------------------------------------------------------------\n";
+  print STDERR "$now : MetaxaQR is finished!\n";
+}
+
+## Write end time a summary file
+if ($out_sum == 1) {   # If summary output is on
+  open (SUMMARY, ">>$output.summary.txt");   # Append to the summary file
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "MetaxaQR run finished at $now.\n";   # Write ending time for the analysis
+  close (SUMMARY);   # Close summary file
+}
+
+
+## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
+## johan.bengtsson [at] microbiology.se
+## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
+## //Johan Bengtsson-Palme, December 2010 - March 2021

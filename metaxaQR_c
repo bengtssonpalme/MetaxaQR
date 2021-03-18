@@ -1,0 +1,1266 @@
+#!/usr/bin/perl
+# MetaxaQR Classifier
+$app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 d1";
+$app_message   = "";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+  "    metaxaQR_c -- MetaxaQR Classifier -- Classifies (predicted) barcoding genes\
+    Copyright (C) 2011-2021 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- Entirely new classification method\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+$options = "\
+-i {file} : DNA FASTA input file of rRNA sequences to investigate\
+-o {file} : Base for the names of output file(s)\
+-d {database} : The database used for classification, default depends on the gene option\
+--date {T or F} : Adds a date and time stamp to the output directory, off (F) by default\
+
+Sequence selection options:\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Profile set to use for the search (comma-separated), default is all\
+-g {ssu, lsu, string} : Specifies the barcoding gene Metaxa should look for, default is ssu\
+--mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
+-E {value} : Domain E-value cutoff for a sequence to be included in the output, default = 1\
+-S {value} : Domain score cutoff for a sequence to be included in the output, default = 12\
+-M {value} : Number of sequence matches to consider for classification, default = 5 [REMOVED!]\
+-R {value} : Reliability cutoff for taxonomic classification, default = 75 [LIKELY TO CHANGE!]\
+-T {comma-separated values} : Sets the percent identity cutoff to be classified at a certain taxonomic level [REMOVED!]\
+                              Order of the values is: Kingdom/Domain,Phylum,Class,Order,Family,Genus,Species
+                              Default values are:     0,60,70,75,85,90,97
+--scoring_model {new, old} : Selects the scoring model to be used for classification, select 'old' to use the pre 2.2 scoring model, default = new [REMOVED!]\
+-H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50 [DEFAULT HAS CHANGED, AND INTERPRETATIONOF OPTION HAS ALSO CHANGED!]\
+--masking {T or F} : Whether to use masking in the searches or not, off (F) by default [NEW OPTION, coupled to --qmask]\
+--gap_penalty {string} : The gap penalty scores applied to the vsearch step, default = '20I/2E+2I/1E' [NEW OPTION]\
+--search_id {value} : The sequence identity cutoff for the vsearch, default = 0.5 [NEW OPTION]\
+--search_maxaccepts {value} : Controls the --maxaccepts option of vsearch, default = 4 [NEW OPTION]\
+--search_maxrejects {value} : Controls the --maxrejects option of vsearch, default = 32 [NEW OPTION]\
+--search_wordsize {value} : The word-size used for the classification, default is 8 [NEW OPTION, coupled to --wordlength]\
+--reference {file} : A file in FASTA format containing reference sequences to be sent to a separate file in the analysis, default is blank (unused)\
+--ref_identity {value} : The sequence identity cutoff to be considered a sequence to be derived from a reference entry, default = 99\
+--blast_eval {value} : The E-value cutoff used in the BLAST search, high numbers may slow down the process, cannot be used with the --blast_score option, default is 1e-5 [REMOVED! SUPPORT FOR BLAST REMOVED]\
+--blast_score {value} : The score cutoff used in the BLAST search, low numbers may slow down the process, cannot be used with the --blast_eval option, default is to used E-value cutoff, not score [REMOVED! SUPPORT FOR BLAST REMOVED]\
+--blast_wordsize {value} : The word-size used for the BLAST-based classification, default is 14 [REMOVED! SUPPORT FOR BLAST REMOVED]\
+--cpu {value} : the number of CPU threads to use, default is 1\
+--megablast {T or F} : Uses megablast for classification for better speed but less accuracy, off (F) by default [REMOVED! SUPPORT FOR BLAST REMOVED]\
+--plus {T or F} : Runs blast search through blast+ instead of the legacy blastall engine, off (F) by default [REMOVED! SUPPORT FOR BLAST REMOVED]\
+--usearch {version} : Runs usearch instead of blast, specify version, off (0) by default [REMOVED! SUPPORT FOR USEARCH REMOVED]\
+--usearch_bin {path} : Specifies the location of the Usearch binary to be used, default is 'usearch' only [REMOVED! SUPPORT FOR USEARCH REMOVED]\
+--ublast {T or F} : Runs the Ublast algorithm instead of Usearch algorithm, default is on (T) [REMOVED! SUPPORT FOR USEARCH REMOVED]\
+
+Output options:\
+--summary {T or F} : Summary of results output, on (T) by default\
+--fasta {T or F} : FASTA-format output of extracted rRNA sequences, on (T) by default\
+--split_pairs {T or F} : Outputs the two read pairs separately, off (F) by default\
+--table {T or F} : Table format output of sequences containing probable rRNAs, off (F) by default\
+--taxonomy {T or F} : Table format output of probable taxonomic origin for sequences, on (T) by default\
+--reltax {T or F} : Output of probable taxonomic origin for sequences with reliability scores at each rank, off (F) by default [REMOVED]\
+--taxlevel {integer} : Force Metaxa to classify sequences at a certain taxonomy level, regardless of reliability score, off (0) by default\
+--align {a, all, u, uncertain, n, none} : Outputs alignments of BLAST matches to query in all, uncertain or no cases, requires MAFFT to be installed, default is 'none'\
+--not_found {T or F} : Saves a list of non-found entries, off (F) by default\
+--silent {T or F} : Supresses printing progress info to stderr, off (F) by default\
+--save_raw {T or F} : saves all raw data for searches etc. instead of removing it on finish, off (F) by default\
+
+-h : displays this help message\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of Metaxa\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/metaxaQR_c$//;
+$input = "";
+$output = "metaxaQR_out";
+$blastDB = "";
+$type = "all";
+$gene = "ssu";
+$E = 1e-3;
+$S = 0;
+$H = 50;
+$W = 8;
+$C = 75;
+$search_ID = 0.5;
+$masking = 0;
+$maxaccepts = 4;
+$maxrejects = 32;
+#$gap_penalty = "20I/0QE/2TE+2I/0QE/1TE";
+$gap_penalty = "20I/2E+2I/1E";
+$cpu = 1;
+$multi_thread = "unset";
+$out_sum = 1;
+$out_fasta = 1;
+$out_tax = 1;
+$out_table = 0;
+$out_not = 0;
+$out_align = "n";
+$out_date = 0;
+$split_pairs = 0;
+$tax_level = 0;
+$debug = 0;
+$pipeline = 0;
+$blastreport = "";
+$reference = "";
+$mode = "m";
+$ref_id = 99;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) { # Goes through the list of arguments
+  $arg = @ARGV[$i];		# Stores the current argument in $arg
+
+  if ($arg eq "-i") {		# Read input files from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "--blastreport") { # Read pre-calculated vsearch output in BLAST table format  from --blastreport flag
+    $i++;
+    $blastreport = @ARGV[$i];
+  }
+  if ($arg eq "-o") {		# Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+  if ($arg eq "-d") {		# Read the BLAST database from -d flag
+    $i++;
+    $blastDB = @ARGV[$i];
+  }
+  if ($arg eq "--date") { # Determine whether or not to add a date stamp based on the --date flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) { # Check if argument begins with "F", "f", or "0"
+      $out_date = 0;
+    } else {
+      $out_date = 1;
+    }
+  }
+
+  if ($arg eq "-t") { # Select what types of rRNAs to look for using the -t flag
+    $i++;
+    $type = @ARGV[$i];
+  }
+  if (($arg eq "-g") || ($arg eq "--gene")) { # Read gene from -g (or --gene) flag
+    $i++;
+    $gene = lc(@ARGV[$i]);
+  }
+  if ($arg eq "-E") {	    # Set the E-value cutoff using the -E flag
+    $i++;
+    $E = @ARGV[$i];
+  }
+  if ($arg eq "-S") {	      # Set the score cutoff using the -S flag
+    $i++;
+    $S = @ARGV[$i];
+  }
+  if ($arg eq "-H") { # Set the number of points that the HMMER-predicted origin will be given using the -H flag
+    $i++;
+    $H = @ARGV[$i];
+  }
+  if ($arg eq "-R") { # Set the taxonomy reliability cutoff using the -R flag
+    $i++;
+    $C = @ARGV[$i];
+  }
+  if ($arg eq "--gap_penalty") {	# Set the gap penalty for the search using the --gap_penalty flag
+    $i++;
+    $gap_penalty = @ARGV[$i];
+  }
+  if ($arg eq "--search_id") { # Set the identity cutoff for the search using the --search_id flag
+    $i++;
+    $search_ID = @ARGV[$i];
+  }
+  if ($arg eq "--search_maxaccepts") { # Set the maximum number of accepted hits for the search using the --search_maxaccepts flag
+    $i++;
+    $maxaccepts = @ARGV[$i];
+  }
+  if ($arg eq "--search_maxrejects") { # Set the maximum number of rejected hits for the search using the --search_maxrejects flag
+    $i++;
+    $maxrejects = @ARGV[$i];
+  }
+  if ($arg eq "--search_wordsize") { # Set the word size for the search using the --search_wordsize flag
+    $i++;
+    $W = @ARGV[$i];
+  }
+  if ($arg eq "--search_wordsize") { # Set the word size for the search using the --search_wordsize flag
+    $i++;
+    $W = @ARGV[$i];
+  }
+  if ($arg eq "--cpu") { # Set the number of CPUs to use based on the --cpu flag
+    $i++;
+    $cpu = @ARGV[$i];
+  }
+  if ($arg eq "--masking") { # Determine whether or not to use masking based on the --masking flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $masking = 1;
+    } else {
+      $masking = 0;
+    }
+  }
+  if ($arg eq "--mode") { # Set the operating mode based on the --mode flag
+    $i++;
+    $mode = lc(substr(@ARGV[$i],0,1));
+  }
+
+  if ($arg eq "--temp") {   # Set temporary directory
+    $i++;
+    $tempDir = @ARGV[$i];
+  }
+
+
+  if ($arg eq "--reference") { # Select a reference file using the --reference flag
+    $i++;
+    $reference = @ARGV[$i];
+  }
+  if ($arg eq "--ref_identity") { # Set the reference identity cutoff using the --ref_identity flag
+    $i++;
+    $ref_id = @ARGV[$i];
+  }
+
+
+  if ($arg eq "--summary") { # Determine whether or not to output a summary based on the --summary flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $out_sum = 1;
+    } else {
+      $out_sum = 0;
+    }
+  }
+  if ($arg eq "--fasta") { # Determine whether or not to output FASTA-files based on the --fasta flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $out_fasta = 1;
+    } else {
+      $out_fasta = 0;
+    }
+  }
+  if ($arg eq "--split_pairs") { # Determine whether or not to split paired output FASTA based on the --split_pairs flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $split_pairs = 1;
+    } else {
+      $split_pairs = 0;
+    }
+  }
+  if ($arg eq "--taxonomy") { # Determine whether or not to output tables of taxonomic preditions based on the --taxonomy flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $out_tax = 1;
+    } else {
+      if ((@ARGV[$i] eq "complete") || (@ARGV[$i] eq "2")) { # Check for complete taxonomy
+	$out_tax = 2;
+      } else {
+	$out_tax = 0;
+      }
+    }
+  }
+  if ($arg eq "--taxlevel") { # Set the forced taxonomy classification level
+    $i++;
+    $tax_level = @ARGV[$i];
+  }
+
+
+  if ($arg eq "--table") { # Determine whether or not to output tables of all potential matches based on the --table flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $out_table = 1;
+    } else {
+      $out_table = 0;
+    }
+  }
+  if ($arg eq "--not_found") { # Determine whether or not to output a list of sequences that are not rRNAs based on the --not_found flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $out_not = 1;
+    } else {
+      $out_not = 0;
+    }
+  }
+  if ($arg eq "--align") { # Determine for what sequences alignments should be made based on the --align flag
+    $i++;
+    $out_align = substr(@ARGV[$i],0,1);
+  }
+  if ($arg eq "--silent") { # Determine whether or not to output anything to the screen based on the --silent flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $silent = 1;
+    } else {
+      $silent = 0;
+    }
+  }
+  if ($arg eq "--save_raw") { # Determine whether or not to save all the raw intermediate data based on the --save_raw flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) { # Check if argument begins with "T", "t", or "1"
+      $save_raw = 1;
+    } else {
+      $save_raw = 0;
+    }
+  }
+
+  ## If "-h" or "--help" are among the options, output usage data and options
+  if (($arg eq "-h") || ($arg eq "--help")) {
+    print "Usage: metaxaQR_c -i <input file> -o <output file>\nOptions:$options";
+    print "-----------------------------------------------------------------\n";
+    exit;			# Exit Metaxa
+  }
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;			# Exit Metaxa
+  }
+
+  if ($arg eq "--debug") {	# Run Metaxa in debug mode
+    $debug = 1;
+  }
+  if ($arg eq "--pipeline") {   # Run Metaxa in pipeline mode
+    $pipeline = 1;
+  }
+}
+
+## Setup some variables dependent on input
+
+$gene = uc($gene);
+
+if ($blastDB eq "") {		# If no DB has been specified
+  $blastDB = "$bindir\metaxaQR_db/$gene/mqr"; # Set the DB to the gene path
+}
+
+if ($gap_penalty =~ /\+/) {
+  ($gapopen, $gapext) = split('\+', $gap_penalty);
+} else {
+  print STDERR "FATAL ERROR :: Gap penalty specified ($gap_penalty) is not valid.\
+Consult the manual for how to specify gap penalties.\
+This error is fatal, and MetaxaQR will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+## Check for binaries
+chomp($path = `which vsearch`); # Get the path for vsearch
+if ($path eq "") { # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate vsearch binary! It seems that vsearch is not installed properly.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which mafft`);   # Get the path for mafft
+if ($path eq "") {  # If the path is empty, then show an error message
+  print STDERR "ERROR :: Could not locate MAFFT binaries! Maybe MAFFT is not installed properly?\
+Consult the manual for installation instructions.\
+This error is not fatal, but will prevent MetaxaQR from automatically creating alignments.\
+Automatic sequence alignment has now been turned off completely.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  $out_align = "n";		# Turn off automatic sequence aligning
+}
+
+
+## Check for databases
+
+chomp($errormsg = `ls $blastDB* 2>&1 1>/dev/null`); # Get the error msg when looking for the BLAST database
+if (substr($errormsg,0,4) eq "ls: ") { # If the error message begins with "ls: ", then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: The specified classification database ($blastDB) could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($pipeline == 0) { # If metaxa_c is not run in pipeline mode (i.e. from metaxa)
+  if ($out_date == 1) {	 # If a date and time stamp should be supplied
+    ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time); # Get the date and time
+    $year = $year + 1900;	# Format the year
+    $mon = $mon + 1;		# Format the month
+    if ($mon < 10) {		# Add a zero to the month, if needed
+      $mon = "0" . $mon;
+    }
+    if ($mday < 10) {		# Add a zero to the day, if needed
+      $mday = "0" . $mday;
+    }
+    if ($hour < 10) {		# Add a zero to the hour, if needed
+      $hour = "0" . $hour;
+    }
+    if ($min < 10) {		# Add a zero to the minute, if needed
+      $min = "0" . $min;
+    }
+    $outputDate = ".$year\-$mon\-$mday\_$hour.$min"; # Create a date and time stamp
+    $outputDate =~ s./.-.g; # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+    $output = $output . $outputDate; # Add the date and time stamp top the output base name
+  }
+}
+
+if ($tempDir eq "") {
+  $tempDir = "metaxa_temp_directory__$output"; # Setup a temporary directory variable
+  $tempDir =~ s./.-.g; # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+}
+
+if ($pipeline == 0) {		# If not running in pipeline mode
+  ## Create a summary file
+  if ($out_sum == 1) {			    # If summary output is on
+    $now = localtime;			    # Get the current time
+    open (SUMMARY, ">$output.summary.txt"); # Create the summary file
+    print SUMMARY "MetaxaQR_c run started at $now.\n"; # Output the starting time for the analysis
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);		# Close summary file
+  }
+}
+
+## Create a temporary directory for Metaxa
+if ($pipeline == 0) { # If metaxa_c is not run in pipeline mode (i.e. from metaxa)
+  `mkdir $tempDir 2> /dev/null`; # Create a temporary directory
+}
+
+## Setup MAFFT-output directory (if needed)
+if ($out_align ne "n") { # If not alignment output is completely turned off
+  `mkdir $output\_alignments 2> /dev/null`; # Create an alignment output directory
+}
+
+## Open the summary file for writing
+if ($out_sum == 1) {			   # If summary output is on
+  open (SUMMARY, ">>$output.summary.txt"); # Append to the summary file
+}
+
+## Prepare profile set data etc.  ## THIS CODE MAY HAVE A PROBLEM IN VERSION 2.2!
+@profileList = split(',',$type); # Get the list of profile types
+foreach $entry (@profileList) {	 # Go through the entered types
+  if (($entry eq "all") || ($entry eq "A")) { # If "all" or "A" is among the entries
+    push(@profileSet,"A"); # Add the archaea profiles to the investigation set
+    push(@profileSet,"B"); # Add the bacteria profiles to the investigation set
+    push(@profileSet,"C"); # Add the chloroplast profiles to the investigation set
+    push(@profileSet,"E"); # Add the eukaryota profiles to the investigation set
+    push(@profileSet,"M"); # Add the mitochondrial 16S profiles to the investigation set
+    if ($gene ne "5S") {
+      push(@profileSet,"N"); # Add the mitochondrial 12S profiles to the investigation set
+    }
+  }
+  ##Archaea
+  if ((substr($entry,0,1) eq "a") && ($entry ne "all")) { # If the first charachter of the entry is "a", but the complete entry not is "all"
+    push(@profileSet,"A"); # Add the archaea profiles to the investigation set
+  }
+  ## Bacteria
+  if (substr($entry,0,1) eq "b") { # If the first charachter of the entry is "b"
+    push(@profileSet,"B"); # Add the bacteria profiles to the investigation set
+  }
+  ## Eukaryota
+  if (substr($entry,0,1) eq "e") { # If the first charachter of the entry is "e"
+    push(@profileSet,"E"); # Add the eukaryota profiles to the investigation set
+  }
+  ## Chloroplasts
+  if (substr($entry,0,1) eq "c") { # If the first charachter of the entry is "c"
+    push(@profileSet,"C"); # Add the chloroplast profiles to the investigation set
+  }
+  ## Mitochondria
+  if (substr($entry,0,1) eq "m") { # If the first charachter of the entry is "m"
+    push(@profileSet,"M"); # Add the mitochondrial 16S profiles to the investigation set
+    if ($gene ne "5s") {
+      push(@profileSet,"N"); # Add the mitochondrial 12S profiles to the investigation set
+    }
+  }
+  ## Other (this is an 'undocumented' feature)
+  if (substr($entry,0,1) eq "o") { # If the first charachter of the entry is "o"
+    push(@profileSet,"O"); # Add a potential set of 'other' (custom) profiles to the investigation set
+  }
+}
+
+## Prepare reference sequences
+if ($reference ne "") {
+  chomp($errormsg = `ls $reference 2>&1 1>/dev/null`); # Get the error msg when looking for the BLAST database
+  if (substr($errormsg,0,4) eq "ls: ") { # If the error message begins with "ls: ", then show an error message and exit Metaxa
+    print STDERR "FATAL ERROR :: The specified reference sequences ($reference) could not be found.\
+This error is fatal, and MetaxaQR will now abort.\n";
+    print STDERR "-----------------------------------------------------------------\n";
+    exit;
+  }
+
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Building vsearch UDB database for reference sequences...\n";
+  }
+  `vsearch --makeudb_usearch $reference --output $tempDir/REF_DB.udb --dbmask none --quiet`;
+}
+
+## Get the total memory available
+open (MEMFILE, "/proc/meminfo");  #  Open the memory information "file"
+while (chomp($line = <MEMFILE>)) {  # Read from this file
+  if (substr($line, 0, 9) eq "MemTotal:") {  # If this is the total memoryline
+    $line =~ s/  */ /g;  # Remove extra spaces
+    ($blah,$memtotal,$kblah) = split(' ',$line);  # Extract total memory value
+    if ($kblah eq "kB") {  # If value given in kilobytes
+      $memtotal = $memtotal * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "MB") {  # If value given in megabytes
+      $memtotal = $memtotal * 1024 * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "GB") {  # If value given in gigabytes
+      $memtotal = $memtotal * 1024 * 1024 * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "TB") {  # If value given in terabytes
+      $memtotal = $memtotal * 1024 * 1024 * 1024 * 1024;  # Convert memory value to bytes
+    }
+  }
+}
+close (MEMFILE);  # Close memory file
+
+$curmem = 0;  # Reset the memory tracker
+$filenumber = 1;  # Reset the file number counter
+$no_of_seqs = `grep -c ">" $input`;  # Count sequences in input file
+if ($memtotal == 0) {  # If the total memory could not be determined for some reason
+  #$memtotal = 1024 * 1024 * 1024;  # Reserve 1GB of RAM, who does not have that??
+  $memtotal = 1024 * 1024 * 1024;  # Reserve 1GB of RAM, who does not have that??
+}
+
+$seqPerFile = int($memtotal / 10000);
+## Split the input file
+open (SEQUENCES, $input);   # Open the input sequence file for reading
+open (SPLITFILE, ">$input.$filenumber");   # Open the first split sequence file for writing
+while ($line = <SEQUENCES>) { # Read the file line by line
+  if (substr($line,0,1) eq ">") {    # Id this is a seq ID
+    $seqCount++;
+    if ($seqCount > $seqPerFile) {
+      close SPLITFILE;
+      $filenumber++;
+      open (SPLITFILE, ">$input.$filenumber");   # Open a new split sequence file for writing
+      $seqCount = 1;
+    }
+  }
+  print SPLITFILE $line;  # Print this line to the split file
+}
+close SEQUENCES;		#   Close the sequence input file
+close SPLITFILE;		#   Close the last split sequence file
+
+$totalfiles = $filenumber;
+
+for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
+  if ($totalfiles > 1) {
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Now running classification for batch $filenumber of $totalfiles...\n";
+    }
+  }
+  if ($blastreport eq "") {
+    ## Perform vsearch search
+    ## Get the current time and output info message
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Comparing sequences to classification database using vsearch (this may take a long while)...\n";
+    }
+
+    ## Check for UDB database present
+    chomp($errormsg = `ls $blastDB.udb 2>&1 1>/dev/null`); # Get the error msg when looking for the UDB database
+    if (substr($errormsg,0,4) eq "ls: ") { # If the error message begins with "ls: ", then show an error message and exit Metaxa
+      $now = localtime;
+      if ($silent == 0) {
+	print STDERR "$now : Building vsearch UDB database (will only be done once)...\n";
+      }
+      `vsearch --makeudb_usearch $blastDB.fasta --output $blastDB.udb --dbmask none --quiet`;
+    }
+    
+    if ($masking == 1) {
+      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+    } else {
+      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+    }
+    
+    if ($reference ne "") {
+      ## Perform vsearch search against reference database
+      if ($masking == 1) {
+	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+      } else {
+	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+      }
+      
+    }
+  } else {
+    `cp $blastreport $tempDir/rRNA.blastn.$filenumber`;
+  }
+
+  open (BLASTOUT, ">>$tempDir/rRNA.blastn.$filenumber"); # Open the BLAST output file for writing
+  print BLASTOUT "END\n";			   # Print an end line
+  close BLASTOUT;				   # Close BLAST output file
+  
+  if ($reference ne "") {
+    open (BLASTOUT, ">>$tempDir/reference.blastn.$filenumber"); # Open the reference BLAST output file for writing
+    print BLASTOUT "END\n";			  # Print an end line
+    close BLASTOUT;		# Close BLAST output file
+  }
+  
+  ## Analyse BLAST output
+  ## Get the current time and output info
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Analysing classification results (this might take quite some time)...\n";
+  }
+
+
+  ## Read taxonomy from database
+  $udb = $blastDB . ".udb";
+  $tree = $blastDB . ".tree";
+  $repr = $blastDB . ".repr";
+  
+  print STDERR "Reading tree database...\n";
+  open (TREE, $tree);
+  while ($line = <TREE>) {
+    chomp($line);
+    ($label, $parents) = split('\t', $line);
+    $family_tree{$label} = $parents;
+  }
+  close TREE;
+  
+  print STDERR "Reading repr database...\n";
+  open (REPR, $repr);
+  while ($line = <REPR>) {
+    chomp($line);
+    ($label, $seqID, $taxonomy) = split('\t', $line);
+    $seqID =~ s/>//;
+    if ($label =~ m/MQR_100_/) {  ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+      $labels{$seqID} = $label;
+    }
+    $taxdata{$label} = $taxonomy;
+  }
+  close REPR;
+  
+  ## Set up output files
+  if ($filenumber == 1) {
+    if ($out_table == 1) {			# If table output is on
+      open (TABLE, ">$output.blast.table");	# Create a table output file
+    }
+    if ($out_fasta == 1) {			   # If FASTA output is on
+      open (AFASTA, ">$output.archaea.fasta"); # Create the archaea FASTA file
+      open (BFASTA, ">$output.bacteria.fasta"); # Create the bacteria FASTA file
+      open (EFASTA, ">$output.eukaryota.fasta"); # Create the eukaryote FASTA file
+      open (MFASTA, ">$output.mitochondria.fasta");	# Create the mitochondrial FASTA file
+      open (CFASTA, ">$output.chloroplast.fasta"); # Create the chloroplast FASTA file
+      open (UFASTA, ">$output.uncertain.fasta"); # Create the uncertain FASTA file
+    }
+    if ($out_not == 1) {		# If not-found output is on
+      open (NOTFOUND, ">$tempDir/rRNA_blast_not_found.txt"); # Create a BLAST not-found output file
+    }
+    
+    if ($out_tax > 0) {			    # If taxonomy output is on
+      open (TAXONOMY, ">$output.taxonomy.txt"); # Create a taxonomy table output file
+    }
+
+  }
+  
+  undef %sequences;
+  undef %inputList;
+  ## Read the input sequences
+  open (SEQUENCES, "$input.$filenumber");   # Open the input sequence file for reading
+  while (chomp($line = <SEQUENCES>)) { # Read the file line by line
+    if (substr($line,0,1) eq ">") {    # Id this is a seq ID
+      ($seqID) = split(' ',$line); # Get the first word of this line (before the first space), should be the sequence ID
+      $seqID = substr($seqID,1); # Remove the ">" character from the seq ID
+      $DNA = "";		       # Empty the DNA sequence
+    } else {
+      $DNA = $DNA . $line;       # Add the next line to the DNA sequence
+      $sequences{$seqID} = $DNA; # Add this DNA sequence
+      $inputList{$seqID} = 0;    # Make a list of input IDs
+    }
+  }
+  close SEQUENCES;		#   Close the sequence input file
+
+  undef %refHits;
+  if ($reference ne "") {
+    open (REFBLASTOUT, "$tempDir/reference.blastn.$filenumber"); # Open the reference BLAST output file for reading
+    if ($filenumber == 1) {
+      open (REFFASTA, ">$output.reference.fasta"); # Create the reference FASTA output file
+    }
+    $ssuREF = 0;
+    ## Read and analyse BLAST output file
+    while ($line = <REFBLASTOUT>) { # Read in the BLAST output file, line by line
+      chomp($line);		  # Remove any potential line feeds
+
+      ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$line);
+      
+      if (($identity >= $ref_id) && ($length >= 50)) {
+	## Extract the sequence
+	$DNA = $sequences{$query};
+	if (($length >= length($DNA) * 0.5) || ($qs < 2) || ($qe == length($DNA))) {
+	  if (defined($refHits{$query})) {
+	    $refHits{$query}++;
+	  } else {
+	    $ssuREF++;
+	    $refHits{$query} = 1;
+	  
+	    $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
+	    if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
+	      $queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
+	      $writeQuery = substr($query,0,length($query) - 2); # Remove the last two characters ("|X") from the query identifier to restore the original query identifier for the output
+	    } else { # If the query does not seem to be processed by metaxa_x
+	      $writeQuery = $query; # Assure that the output query identifier will be the same as the input identifier
+	      $queryType = ""; # Specify that there is no metaxa_x origin data for this sequence
+	    }
+	    
+	    push(@ssuRList,$writeQuery); # Add this entry to the list of reference rRNA sequences
+	    print REFFASTA ">$writeQuery Reference rRNA\n"; # Write definition line to the reference FASTA file
+	    print REFFASTA "$DNA\n"; # Write the DNA sequence to the archaea FASTA file
+	  }
+	}
+      }
+    }
+    close REFFASTA;
+    close REFBLASTOUT;
+  }
+
+  open (OUTMQR, ">>$tempDir/classifications.mqr"); # Open the new MQR classification file for writing
+  open (BLASTOUT, "$tempDir/rRNA.blastn.$filenumber"); # Open the BLAST output file for reading
+  
+  if ($filenumber == 1) {
+    ## Set all counts for different rRNA types, and found sequences to zero
+    $ssuA = 0;
+    $ssuB = 0;
+    $ssuC = 0;
+    $ssuE = 0;
+    $ssuM = 0;
+    $ssuU = 0;
+    $ssuQueries = 0;
+    $ssuDB = 0;
+  }
+
+  $lastQuery = "";
+
+  ## Read and analyse BLAST output file
+  while ($line = <BLASTOUT>) { # Read in the BLAST output file, line by line
+    chomp($line);		     # Remove any potential line feeds
+    if ($line eq "END") {
+      last;
+    }
+    $ssuQueries++;	# Add one to the number of inputted queries
+    
+    
+    #print STDERR $line . "\n";
+    
+    ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$line);
+    
+    $query =~ s/ .*//;
+    $subject =~ s/ .*//;
+    $subject =~ s/^lcl.//;
+
+    $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
+    if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
+      $queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
+      $writeQuery = substr($query,0,length($query) - 2); # Remove the last two characters ("|X") from the query identifier to restore the original query identifier for the output
+    } else { # If the query does not seem to be processed by metaxa_x
+      $writeQuery = $query; # Assure that the output query identifier will be the same as the input identifier
+      $queryType = ""; # Specify that there is no metaxa_x origin data for this sequence
+    }
+    $alnQuery = $writeQuery;
+    $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
+    
+    $line = $query . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+
+    if ($out_table == 1) {	# If table output is on
+      if ($line ne "END") {
+	print TABLE $line . "\n";	# Print to blast table output
+      }
+    }
+
+    if (defined($refHits{$query})) {
+      next;
+    }
+
+    $mqr_label = $labels{$subject};
+    $mqr_tree = $family_tree{$mqr_label};
+    $mqr_id_level = findIDLevel($identity);
+    if ($mqr_id_level == 100) {
+      $mqr_tax = $taxdata{$mqr_label};
+      $split_tree = $mqr_label;
+    } else {
+      if ($mqr_id_level == 0) {
+	$mqr_tax = "Unknown";
+	$split_tree = "Unknown";
+      } else {
+	$split_tree = $mqr_tree;
+	$split_at = "MQR_$mqr_id_level";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+	$split_tree =~ s/.*$split_at/$split_at/;
+	$split_tree =~ s/ .*//;
+	$mqr_tax = $taxdata{$split_tree};
+      }
+    }
+    $rID = $identity / 100;
+    $rLen = $length;
+    $rScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rLen ** ($rID ** 1.1) ) ) ) ) );
+    $confidence = $rScore * 100;
+    
+    print OUTMQR $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $split_tree . "\t" . $mqr_tax . "\t" . $rScore . "\n";
+
+    print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	  
+    $agreement = $mqr_tax;
+    if ($agreement eq "Mismatch") {
+      $agreement = "Uncertain";
+    }
+    $suggestedType = uc(substr($agreement, 0, 1));  # Best hit is first character of agreement
+    if ($suggestedType eq $queryType) {
+      $bestType = $suggestedType;
+    } else {
+      $bestType = "U";
+      if ($confidence - $H > 0) {
+	$bestType = $suggestedType;
+      }
+      if ($H - $confidence > 0) {
+	$bestType = $queryType;
+      }
+    }
+
+    $DNA = $sequences{$query}; # Load this DNA sequence
+    $inputList{$query} = 1; # Indicate that this sequence had vsearch matches
+    
+    $geneType = uc($gene);
+    if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+      $geneType = $geneType . " rRNA";
+    }
+    $ssuDB++; # Add one to the number of queries finding at least one match in the database
+   
+    if ($bestType eq "A") { # If the most likely rRNA type is archaea
+      $ssuA++; # Add one to the number of archeal rRNA sequences
+      push(@ssuAList,$writeQuery); # Add this entry to the list of archeal rRNA sequences
+      print AFASTA ">$writeQuery Archaeal $geneType\n";	# Write FASTA definition line
+      print AFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "B") { # If the most likely rRNA type is bacteria
+      $ssuB++; # Add one to the number of bacterial rRNA sequences
+      push(@ssuBList,$writeQuery); # Add this entry to the list of bacterial rRNA sequences
+      print BFASTA ">$writeQuery Bacterial $geneType\n"; # Write FASTA definition line
+      print BFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "E") { # If the most likely rRNA type is eukaryote
+      $ssuE++; # Add one to the number of eukaryote rRNA sequences
+      push(@ssuEList,$writeQuery); # Add this entry to the list of eukaryote rRNA sequences
+      print EFASTA ">$writeQuery Eukaryotic $geneType\n"; # Write FASTA definition line
+      print EFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "C") { # If the most likely rRNA type is chloroplast
+      $ssuC++; # Add one to the number of chloroplast rRNA sequences
+      push(@ssuCList,$writeQuery); # Add this entry to the list of chloroplast rRNA sequences
+      print CFASTA ">$writeQuery Chloroplast $geneType\n"; # Write FASTA definition line
+      print CFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "M") { # If the most likely rRNA type is mitochondrial 16S
+      $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+      push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
+      print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
+      print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "N") { # If the most likely rRNA type is mitochondrial 12S
+      $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+      push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
+      print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
+      print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+    }
+    if ($bestType eq "U") { # If the most likely rRNA type is uncertain
+      $ssuU++; # Add one to the number of rRNA sequences of uncertain origin
+      push(@ssuUList,$writeQuery . " #"); # Add this entry to the list of rRNA sequences of uncertain origin
+      print UFASTA ">$writeQuery Unknown $geneType\n"; # Write definition line to the uncertain FASTA file
+      print UFASTA "$DNA\n"; # Write the DNA sequence to the uncertain FASTA file
+      if ($out_align eq "u") { # If only uncertain sequences should be aligned
+	open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
+	print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
+	print ALNFASTA "$DNA\n"; # Write the DNA sequence
+	$dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
+	print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
+	close (ALNFASTA); # Close the alignment FASTA input file
+	`mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+      }
+    } else {
+      if ($out_align eq "a") { # If all sequences should automatially be aligned
+	open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
+	print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
+	print ALNFASTA "$DNA\n"; # Write the DNA sequence
+	$dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
+	print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
+	close (ALNFASTA); # Close the alignment FASTA input file
+	`mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+      }
+    }
+  }
+  close BLASTOUT;			# Close the blast output file
+  
+  ## Save sequences not found in the BLAST-report
+  foreach $query (keys(%inputList)) { # For all sequences that found no matches in the blast search
+    
+    if (defined($refHits{$query})) {
+      next;
+    }
+
+    if ($inputList{$query} == 0) {
+    
+      ## New query started...
+      $ssuQueries++;	   # Add one to the number of inputted queries
+    
+      $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
+      if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
+	$queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
+	$writeQuery = substr($query,0,length($query) - 2); # Remove the last two characters ("|X") from the query identifier to restore the original query identifier for the output
+      } else {    # If the query does not seem to be processed by metaxa_x
+	$writeQuery = $query; # Assure that the output query identifier will be the same as the input identifier
+	$queryType = ""; # Specify that there is no metaxa_x origin data for this sequence
+      }
+      
+      ## Set a file-system friendly name for the query sequence for alignment creation later
+      $alnQuery = $writeQuery;
+      $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
+      
+      ## Extract the actual sequence
+      $DNA = $sequences{$query};
+      
+      $geneType = uc($gene);
+      if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+	$geneType = $geneType . " rRNA";
+      }
+    
+      if ($queryType eq "A") {	# If sequence is most likely archaeal
+	$extendedType = "Predicted Archaeal $geneType";
+	$extendedTax = "Archaea;Unknown Archaea";
+      }
+      if ($queryType eq "B") {	# If sequence is most likely bacterial
+	$extendedType = "Predicted Bacterial $geneType";
+	$extendedTax = "Bacteria;Unknown Bacteria";
+      }
+      if ($queryType eq "E") {	# If sequence is most likely eukaryote
+	$extendedType = "Predicted Eukaryotic $geneType";
+	$extendedTax = "Eukaryota;Unknown Eukaryote";
+      }
+      if ($queryType eq "C") {  # If sequence is most likely chloroplastic
+	$extendedType = "Predicted Chloroplast $geneType";
+	$extendedTax = "Chloroplast;Unknown Eukaryote";
+      }
+      if ($queryType eq "M") { # If sequence is most likely mitochondrial 16S
+	$extendedType = "Predicted Mitochondrial $geneType";
+	$extendedTax = "Mitochondria;Unknown Eukaryote";
+      }
+      if ($queryType eq "N") { # If sequence is most likely mitochondrial 12S
+	$extendedType = "Predicted Mitochondrial $geneType";
+	$extendedTax = "Mitochondria;Unknown Metazoa";
+      }
+      if ($queryType eq "O") { # If sequence is most likely of other origin
+	$extendedType = "Predicted $geneType";
+	$extendedTax = "Unknown";
+      }
+      
+    
+      if ($out_tax > 0) {		# If taxonomy output is on
+	## Determine taxonomic origin
+	$agreement = "";
+	$bestIdentity = 0;
+	$bestLength = 0;
+	$confidenceScore = 0;
+	$confidenceDivisor = 0;
+	print TAXONOMY $writeQuery . "\t" . $extendedTax . "\t" . "N/A" . "\t" . " N/A" . "\t" . "N/A" . "\n"; # Print taxonomic prediction
+      }
+    
+      $geneType = uc($gene);
+      if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+	$geneType = $geneType . " rRNA";
+      }
+      if ($query ne "") {	    # If the query is not empty
+	if ($queryType ne "") { # If the rRNA type of the query is not empty
+	  if ($queryType eq "A") { # If the rRNA type of the query is archaeal
+	    $ssuA++;     # Add one to the number of archeal rRNA sequences
+	    push(@ssuAList,$writeQuery . " #"); # Add this entry to the list of archeal rRNA sequences
+	    print AFASTA ">$writeQuery Archaeal $geneType\n";	# Write definition line to the archaea FASTA file
+	    print AFASTA "$DNA\n"; # Write the DNA sequence to the archaea FASTA file
+	  }
+	  if ($queryType eq "B") { # If the rRNA type of the query is bacterial
+	    $ssuB++;   # Add one to the number of bacterial rRNA sequences
+	    push(@ssuBList,$writeQuery . " #"); # Add this entry to the list of bacterial rRNA sequences
+	    print BFASTA ">$writeQuery Bacterial $geneType\n"; # Write definition line to the bacteria FASTA file
+	    print BFASTA "$DNA\n"; # Write the DNA sequence to the bacteria FASTA file
+	  }
+	  if ($queryType eq "E") { # If the rRNA type of the query is eukaryote
+	    $ssuE++;   # Add one to the number of eukaryote rRNA sequences
+	    push(@ssuEList,$writeQuery . " #"); # Add this entry to the list of eukaryote rRNA sequences
+	    print EFASTA ">$writeQuery Eukaryotic $geneType\n"; # Write definition line to the eukaryote FASTA file
+	    print EFASTA "$DNA\n"; # Write the DNA sequence to the eukaryote FASTA file
+	  }
+	  if ($queryType eq "C") { # If the rRNA type of the query is chloroplast
+	    $ssuC++; # Add one to the number of chloroplast rRNA sequences
+	    push(@ssuCList,$writeQuery . " #"); # Add this entry to the list of chloroplast rRNA sequences
+	    print CFASTA ">$writeQuery Chloroplast $geneType\n"; # Write definition line to the chloroplast FASTA file
+	    print CFASTA "$DNA\n"; # Write the DNA sequence to the chloroplast FASTA file
+	  }
+	  if ($queryType eq "M") { # If the rRNA type of the query is mitochondrial 16S
+	    $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+	    push(@ssuMList,$writeQuery . " #"); # Add this entry to the list of mitochondrial rRNA sequences
+	    print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write definition line to the mitochondria FASTA file
+	    print MFASTA "$DNA\n"; # Write the DNA sequence to the mitochondria FASTA file
+	  }
+	  if ($queryType eq "N") { # If the rRNA type of the query is mitochondrial 12S
+	    $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+	    push(@ssuMList,$writeQuery . " #"); # Add this entry to the list of mitochondrial rRNA sequences
+	    print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write definition line to the mitochondria FASTA file
+	    print MFASTA "$DNA\n"; # Write the DNA sequence to the mitochondria FASTA file
+	  } 
+	}
+      }
+      if ($out_align eq "a") {	# If all sequences should be aligned
+	open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
+	print ALNFASTA ">$writeQuery Unknown $geneType with no specfic matches in database\n"; # Write the definition line
+	print ALNFASTA "$DNA\n";	# Write the DNA sequence
+	close (ALNFASTA);		# Close the alignment FASTA input file
+	`cp $output\_alignments/$alnQuery.unaligned.fasta $output\_alignments/$alnQuery.aligned.fasta 2>/dev/null`; # As there should be only one sequence in this file, MAFFT will refuse to align it, so we instead just create a copy of it as the "aligned" file
+      }
+    }
+    if ($out_not == 1) { # If sequences without matches should be outputted
+      print NOTFOUND "$writeQuery\n"; # Write that this entry had no BLAST matches to the BLAST not-found file
+    }
+  }
+}
+
+## Save results to the summary file
+if ($out_sum == 1) {		# If summary file should be written
+  $geneType = uc($gene);
+  if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+    $geneType = $geneType . " rRNA";
+  }
+  $ssuTotal = $ssuA + $ssuB + $ssuC + $ssuE + $ssuM + $ssuU; # Add rRNAs from all different origins
+  $ssuCertain = $ssuA + $ssuB + $ssuC + $ssuE + $ssuM; # Add rRNAs from all "certain" origins
+  ## Write info on the found rRNA sequences to the summary file
+  print SUMMARY "Number of $geneType sequences to be classified by Metaxa:  \t$ssuQueries\n";
+  print SUMMARY "Number of $geneType having at least one database match:    \t$ssuDB\n";
+  print SUMMARY "Number of $geneType successfully classified by Metaxa:     \t$ssuCertain\n";
+  print SUMMARY "Number of uncertain classifications of $geneType sequences:\t$ssuU\n";
+  if ($reference ne "") {
+    print SUMMARY "Number of reference classifications of $geneType sequences:     \t$ssuREF\n";
+  }
+  print SUMMARY "Total number of classifications made by Metaxa:           \t$ssuTotal\n";
+  print SUMMARY "Number of $geneType sequences assigned to each origin:\n";
+  print SUMMARY "  Archaea:     \t$ssuA\n";
+  print SUMMARY "  Bacteria:    \t$ssuB\n";
+  print SUMMARY "  Eukaryota:   \t$ssuE\n";
+  print SUMMARY "  Chloroplast: \t$ssuC\n";
+  print SUMMARY "  Mitochondria:\t$ssuM\n";
+  print SUMMARY "  Uncertain:   \t$ssuU\n";
+  print SUMMARY "-----------------------------------------------------------------\n";
+  ## Write lists of entries found for each origin
+  print SUMMARY "Sequences of archaeal origin:\n"; # Write the header for the list
+  foreach $entry (@ssuAList) {	# For each entry in the archaea list
+    print SUMMARY "$entry\n";   # Write this entry to the summary file
+  }
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "Sequences of bacterial origin:\n"; # Write the header for the list
+  foreach $entry (@ssuBList) {	# For each entry in the bacterial list
+    print SUMMARY "$entry\n";   # Write this entry to the summary file
+  }
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "Sequences of eukaryote origin:\n"; # Write the header for the list
+  foreach $entry (@ssuEList) {	# For each entry in the eukaryote list
+    print SUMMARY "$entry\n";   # Write this entry to the summary file
+  }
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "Sequences of chloroplast origin:\n"; # Write the header for the list
+  foreach $entry (@ssuCList) { # For each entry in the chloroplast list
+    print SUMMARY "$entry\n";  # Write this entry to the summary file
+  }
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "Sequences of mitochondrial origin:\n";	# Write the header for the list
+  foreach $entry (@ssuMList) { # For each entry in the mitochondria list
+    print SUMMARY "$entry\n";  # Write this entry to the summary file
+  }
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "Sequences of uncertain origin:\n"; # Write the header for the list
+  foreach $entry (@ssuUList) {	# For each entry in the uncertain list
+    print SUMMARY "$entry\n";   # Write this entry to the summary file
+  }
+
+  close (SUMMARY);		# Close the summary file
+}
+
+## Close output files
+if ($out_table == 1) {		# If table output is on
+  close (TABLE);		# Close the table output file
+}
+if ($out_not == 1) {		# If not-found output is on
+  close (NOTFOUND);		# Close the not-found output file
+}
+if ($out_tax > 0) {		# If taxonomy output is on
+  close TAXONOMY;		# Close the taxonomy output file
+}
+
+if ($out_fasta == 1) {		# If FASTA output is on
+  ## Close the FASTA output files
+  close (AFASTA);
+  close (BFASTA);
+  close (EFASTA);
+  close (MFASTA);
+  close (CFASTA);
+  close (UFASTA);
+}
+
+
+## Clean up and finish
+
+if ($save_raw == 1) {		# If raw data should be saved
+  `mv $input.[0-9]* $tempDir/`; # Move split input to temp dir
+} else {			# Else, discard the raw data
+  `rm -r $input.[0-9]*`;		# Remove split input
+}
+
+
+if ($pipeline == 0) { # If metaxa_c is not called from the pipeline mode (i.e. from metaxa)
+  if ($save_raw == 1) {		# If raw data should be saved
+    `mv $tempDir $output\_metaxa_raw_output`; # Change the name of the temporary directory to ..._metaxa_raw_output
+  } else {			# Else, discard the raw data
+    `rm -rf $tempDir`;		# Remove the temporary directory
+  }
+}
+
+## Get the current time and output a finished message
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Classification finished!\n";
+}
+
+if ($split_pairs == 1) {
+  ## If pairs should be split into different files, do that
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Splitting pairs into separate files...\n";
+  }
+  
+  @domains = ("archaea", "bacteria", "eukaryota", "mitochondria", "chloroplast", "uncertain");
+  
+  foreach $domain (@domains) {
+    $domain_input = "$output.$domain.fasta";
+    $remove_unpaired = 0;
+    
+    $seq = "";
+    $cseq = "";
+    $header = "";
+    
+    open (IN, $domain_input);
+    open (FW, ">$output.$domain\_1.fasta");
+    open (REV, ">$output.$domain\_2.fasta");
+    while ($line = <IN>) {
+      chomp($line);
+      if (substr($line, 0, 1) eq ">") {
+	
+	if ($seq ne "") {
+	  ($fw, $cseq) = split('NNN*', $seq);
+	  
+	  if (($cseq eq "") && ($remove_unpaired ne "")) {
+	    # Do nothing ...
+	  } else {
+	    if (($fw eq "") && ($remove_unpaired ne "")) {
+	      # Do nothing ...
+	    } else {
+	      $cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+	      $cseq =~ s/[^A-Z]//g; # Remove all non-alphabetic characters
+	      $cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+	      $rev = reverse($cseq);
+	      
+	      print FW ">" . $id . "_1 " . $header . "\n";
+	      print FW $fw . "\n";
+	      
+	      print REV ">" . $id . "_2 " . $header . "\n";
+	      print REV $rev . "\n";
+	    }
+	  }
+	}
+	
+	$header = $line;
+	($id) = split(' ',$header);
+	$id =~ s/^>//;
+	$header =~ s/^[^ ]* //;
+	$seq = "";
+      } else {
+	$seq = $seq . $line;
+      }
+    }
+    
+    if ($seq ne "") {
+      ($fw, $cseq) = split('NNN*', $seq);
+      $cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+      $cseq =~ s/[^A-Z]//g;	# Remove all non-alphabetic characters
+      $cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+      $rev = reverse($cseq);
+      
+      print FW ">" . $id . "_1 " . $header . "\n";
+      print FW $fw . "\n";
+      
+      print REV ">" . $id . "_2 " . $header . "\n";
+      print REV $rev . "\n";
+    }
+    
+    
+    close IN;
+    close FW;
+    close REV;
+  }
+}  
+
+## Write end time a summary file
+if ($pipeline == 0) {		# If not running in pipeline mode
+  if ($out_sum == 1) {		# If summary output is on
+    open (SUMMARY, ">>$output.summary.txt"); # Append to the summary file
+    print SUMMARY "-----------------------------------------------------------------\n";
+    print SUMMARY "metaxaQR_c run finished at $now.\n"; # Write ending time for the analysis
+    close (SUMMARY);		# Close summary file
+  }
+}
+
+
+sub findIDLevel {
+  $identity_in = shift;
+  $id_int = int($identity_in);
+  if ($id_int >= 90) {
+    return $id_int;
+  }
+  if ($id_int < 50) {
+    return 0;
+  }
+  $firstdig = substr($id_int,0,1);
+  $lastdig = substr($id_int,1,1);
+  if ($lastdig >= 5) {
+    return $firstdig * 10 + 5;
+  }
+  if ($lastdig < 5) {
+    return $firstdig * 10;
+  }
+}
+
+
+
+## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
+## johan.bengtsson [at] microbiology.se
+## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
+## //Johan Bengtsson-Palme, December 2010 - March 2021

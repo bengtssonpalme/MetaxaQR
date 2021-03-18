@@ -1,0 +1,53 @@
+#!/usr/bin/perl
+
+$seqID = shift;
+$file = shift;
+$oneline = shift;
+
+if (substr($seqID,0,3) eq "-f=") {
+  $ID_file = substr($seqID,3);
+  open (IDFILE, $ID_file);
+  #  print STDERR "Looking for IDs (taken from file $ID_file):\n";
+  while (chomp($id = <IDFILE>)) {
+    $seqIDs{$id} = 1;
+    #push(@seqIDs,$id);
+    #    print STDERR $id . ", ";
+  }
+  #  print STDERR "\n";
+  close IDFILE;
+} else {
+  #push(@seqIDs,$seqID);
+  $seqIDs{$seqID} = 1;
+}
+
+$print = 0;
+open (INPUT, $file);
+while (chomp($line = <INPUT>)) {
+  if ($print == 0) {
+    if (substr($line,0,1) eq ">") {
+      ($id) = split(' ',substr($line, 1));
+      if (exists($seqIDs{$id})) {
+	#if (scalar(grep(/^$id$/,@seqIDs)) > 0) {
+	print $line . "\n";
+	$print = 1;
+      }
+    }
+  } else {
+    if (substr($line,0,1) ne ">") {
+      print $line;
+      if ($oneline eq "") {
+        print "\n";
+      }
+    } else {
+      $print = 0;
+      print "\n";
+      ($id) = split(' ',substr($line, 1));
+      if (exists($seqIDs{$id})) {
+      #if (scalar(grep(/^$id$/,@seqIDs)) > 0) {
+	print $line . "\n";
+	$print = 1;
+      }
+    }
+  }
+}
+close INPUT;

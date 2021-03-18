@@ -1,0 +1,1751 @@
+#!/usr/bin/perl
+# MetaxaQR Extractor
+$app_title     = "MetaxaQR Extractor -- Identifies barcoding genes in (meta)genomic data and extracts them";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 d1";
+$app_message   = "";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"    metaxaQR_x - MetaxaQR Extractor -- Identifies barcoding genes in (meta)genomic data and extracts them\
+    Copyright (C) 2011-2021 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- None (virtually identical to the Metaxa2 2.2.2 extractor)\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+$options = "\
+-i {file} : DNA FASTA input file to investigate\
+-o {file} : Base for the names of output file(s)\
+-p {directory} : A path to a directory of HMM-profile collections representing rRNA conserved regions, default is in the same directory as metaxaQR itself\
+--hmmsearch {file} : If the hmmsearch has already been performed, this option can be used as the base for the hmmsearch output files, and the hmmsearch step will be skipped. Overrides the -o option, while a DNA FASTA file must still be supplied!\
+--date {T or F} : Adds a date and time stamp to the output directory, off (F) by default\
+--reset {T or F} : Rebuilds the HMM database. Useful if HMMER has been updated or searches seem to fail mysteriously, off (F) by default\
+
+Sequence selection options:\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Profile set to use for the search (comma-separated), default is all\
+-g {ssu, lsu, string} : Specifies the barcoding gene MetaxaQR should look for, default is ssu\
+--mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
+-E {value} : Domain E-value cutoff for a sequence to be included in the output, default = 1\
+-S {value} : Domain score cutoff for a sequence to be included in the output, default = 12\
+-N {value} : The minimal number of domains that must match a sequence before it is included, default = 2\
+--selection_priority {score, domains, eval, sum} : Selects what will be of highest priority when determining the origin of the sequence, default is sum\
+--search_eval {value} : The E-value cutoff used in the HMMER search, high numbers may slow down the process, cannot be used with the --search_score option, default is to use score cutoff, not E-value\
+--search_score {value} : The score cutoff used in the HMMER search, low numbers may slow down the process, cannot be used with the --search_eval option, default = 0\
+--allow_single_domain {e-value,score or F} : Allow inclusion of sequences that only find a single domain, given that they meet the given E-value and score thresholds, on with parameters 1e-10,0 by default\
+--allow_reorder {T or F} : Allows profiles to be in the wrong order on extracted sequences, on (T) by default\
+--complement {T or F} : Checks both DNA strands against the database, creating reverse complements, on (T) by default\
+--cpu {value} : the number of CPU threads to use, default is 1\
+--multi_thread {T or F} : Multi-thread the HMMER-search, on (T) if number of CPUs (--cpu option > 1), else off (F) by default\
+--heuristics {T or F} : Selects whether to use HMMER's heuristic filtering, on (T) by default\
+
+Output options:\
+--summary {T or F} : Summary of results output, on (T) by default\
+--graphical {T or F} : 'Graphical' output, on (T) by default\
+--fasta {T or F} : FASTA-format output of extracted rRNA sequences, on (T) by default\
+--table {T or F} : Table format output of sequences containing probable rRNAs, off (F) by default\
+--not_found {T or F} : Saves a list of non-found entries, off (F) by default\
+--truncate {T or F} : Truncates the FASTA output to only contain the putative rRNA sequence found, on (T) by default\
+--silent {T or F} : Supresses printing progress info to stderr, off (F) by default\
+--graph_scale {value} : Sets the scale of the graph output, if value is zero, a percentage view is shown, default = 0\
+--save_raw {T or F} : Saves all raw data for searches etc. instead of removing it on finish, off (F) by default\
+
+-h : displays this help message\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of MetaxaQR\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/metaxaQR_x$//;
+$input = "";
+$output = "metaxaQR_out";
+$hmmsearch = "";
+$profileDB = "";
+$type = "all";
+$gene = "ssu";
+$E = 1;
+$S = 12;
+$N = 2;
+$priority = "score";
+$search_eval = 0.01;
+$search_score = "";
+$allow_single_E = 1e-5;
+$allow_single_score = 20;
+$allow_reorder = 1;
+$complement = 1;
+$cpu = 1;
+$multi_thread = "unset";
+$heuristics = 1;
+$out_sum = 1;
+$out_graph = 1;
+$out_fasta = 1;
+$out_table = 0;
+$out_not = 0;
+$out_date = 0;
+$truncate = 1;
+$graph_scale = 0;
+$mode = "m";
+$debug = 0;
+$reset = 0;
+$pipeline = 0;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input files from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+  if ($arg eq "-p") {   # Read profile database from -p flag
+    $i++;
+    $profileDB = @ARGV[$i];
+  }
+  if ($arg eq "--hmmsearch") {   # Read pre-computed hmmsearch output file from --hmmsearch flag ('undocumented' feature)
+    $i++;
+    $hmmsearch = @ARGV[$i];
+  }
+  if ($arg eq "--date") {   # Determine whether or not to add a date stamp based on the --date flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_date = 0;
+    } else {
+      $out_date = 1;
+    }
+  }
+  if ($arg eq "--reset") {   # Reset or not?
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $reset = 0;
+    } else {
+      $reset = 1;
+    }
+  }
+  if ($arg eq "--mode") {   # Set the operating mode based on the --mode flag
+    $i++;
+    $mode = lc(substr(@ARGV[$i],0,1));
+  }
+  if ($arg eq "--temp") {   # Set temporary directory
+    $i++;
+    $tempDir = @ARGV[$i];
+  }
+
+  if ($arg eq "-t") {   # Select what types of rRNAs to look for using the -t flag
+    $i++;
+    $type = @ARGV[$i];
+  }
+  if (($arg eq "-g") || ($arg eq "--gene")) {   # Read gene from -g (or --gene) flag
+    $i++;
+    $gene = lc(@ARGV[$i]);
+  }
+  if ($arg eq "-E") {   # Set the E-value cutoff using the -E flag
+    $i++;
+    $E = @ARGV[$i];
+  }
+  if ($arg eq "-S") {   # Set the score cutoff using the -S flag
+    $i++;
+    $S = @ARGV[$i];
+  }
+  if ($arg eq "-N") {   # Set the number of found domains cutoff using the -N flag
+    $i++;
+    $N = @ARGV[$i];
+  }
+  if ($arg eq "--selection_priority") {   # Set how to order the rRNA types using the --selection_priority flag
+    $i++;
+    $priority = @ARGV[$i];
+  }
+  if ($arg eq "--search_eval") {   # Set the E-value cutoff for the HMMER search using the --search_eval flag
+    $i++;
+    $search_eval = @ARGV[$i];
+    $search_score = "";   #  Turns off score cutoff
+  }
+  if ($arg eq "--search_score") {   # Set the score cutoff for the HMMER search using the --search_score flag
+    $i++;
+    $search_score = @ARGV[$i];
+    $search_eval = "";   #  Turns off E-value cutoff
+  }
+  if ($arg eq "--allow_single_domain") {   # Determine whether or not to allow single domain matches based on the --allow_single_domain flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $allow_single_E = -1;   # Turns off single-domain matching by E-value
+      $allow_single_score = 0;   # Turns off single-domain matching by score
+    } else {
+      ($allow_single_E,$allow_single_score) = split(',',@ARGV[$i]);   # Turns on single-domain matching, assigning the first given value as the E-value cutoff, and the second as score cutoff
+    }
+  }
+  if ($arg eq "--allow_reorder") {   # Determine whether or not to allow the domains to be in the wrong order based on the --allow_reorder flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $allow_reorder = 1;
+    } else {
+      $allow_reorder = 0;
+    }
+  }
+  if ($arg eq "--complement") {   # Determine whether or not to scan the complementary strand of the input file based on the --complement flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $complement = 1;
+    } else {
+      $complement = 0;
+    }
+  }
+  if ($arg eq "--cpu") {   # Set the number of CPUs to use based on the --cpu flag
+    $i++;
+    $cpu = @ARGV[$i];
+  }
+  if ($arg eq "--multi_thread") {   # Determine whether or not to multi-thread the HMMER step based on the --multi_thread flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $multi_thread = 1;
+    } else {
+      $multi_thread = 0;
+    }
+  }
+  if ($arg eq "--heuristics") {   # Determine whether or not to use HMMER's heuristic filtering based on the --heuristics flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $heuristics = 1;
+    } else {
+      $heuristics = 0;
+    }
+  }
+
+  if ($arg eq "--summary") {   # Determine whether or not to output a summary based on the --summary flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sum = 1;
+    } else {
+      $out_sum = 0;
+    }
+  }
+  if ($arg eq "--graphical") {   # Determine whether or not to output a graphical representation of matches based on the --graphical flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_graph = 1;
+    } else {
+      $out_graph = 0;
+    }
+  }
+  if ($arg eq "--fasta") {   # Determine whether or not to output FASTA-files based on the --fasta flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_fasta = 1;
+    } else {
+      $out_fasta = 0;
+    }
+  }
+  if ($arg eq "--table") {   # Determine whether or not to output tables of all potential matches based on the --table flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_table = 1;
+    } else {
+      $out_table = 0;
+    }
+  }
+  if ($arg eq "--not_found") {   # Determine whether or not to output a list of sequences that are not rRNAs based on the --not_found flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_not = 1;
+    } else {
+      $out_not = 0;
+    }
+  }
+  if ($arg eq "--silent") {   # Determine whether or not to output anything to the screen based on the --silent flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $silent = 1;
+    } else {
+      $silent = 0;
+    }
+  }
+  if ($arg eq "--graph_scale") {   # Set the scale of the graphical output based on the --graph_scale flag
+    $i++;
+    $graph_scale = @ARGV[$i];
+  }
+  if ($arg eq "--save_raw") {   # Determine whether or not to save all the raw intermediate data based on the --save_raw flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $save_raw = 1;
+    } else {
+      $save_raw = 0;
+    }
+  }
+
+  ## If "-h" or "--help" are among the options, output usage data and options
+  if (($arg eq "-h") || ($arg eq "--help")) {
+    print "Usage: metaxaQR_x -i <input file> -o <output file>\nOptions:$options";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit Metaxa
+  }
+
+  if ($arg eq "--debug") {   # Run Metaxa in debug mode
+    $debug = 1;
+  }
+  if ($arg eq "--pipeline") {   # Run Metaxa in pipeline mode
+    $pipeline = 1;
+  }
+}
+
+## Setup some variables dependent on input
+
+if ($multi_thread eq "unset") {   # If the multi-thread option is not set
+  if ($cpu > 1) {   # Then if the number of CPUs used > 1, then multi-thread HMMER searches
+    $multi_thread = 1;
+  } else {   # Else, run HMMER searches sequentially on one CPU
+    $multi_thread = 0;
+  }
+}
+
+if ($hmmsearch ne "") {   # If a pre-computed hmmsearch output is supplied
+  $output = $hmmsearch;   # Then set the base of the output directory name to be the same as that hmmsearch output file
+}
+
+if ($pipeline == 1) {   # If metaxaQR_x is part of the metaxaQR pipeline, FASTA output cannot be turned off (as it is used by metaxaQR_c)
+  $out_fasta = 1;   # Turn on FASTA output
+}
+
+$gene = uc($gene);
+
+if ($profileDB eq "") {  # If no profile DB has been specified
+  $profileDB = "$bindir\metaxaQR_db/$gene/HMMs";  # Set the profile DB to the gene path
+}
+
+## Check for binaries
+
+chomp($path = `which hmmpress`);   # Get the path for hmmpress
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate HMMER binaries! It seems that hmmpress is not installed properly.\
+Consult the manual for installation instructions. Note that HMMER3 is required. Previous HMMER-versions will not work.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the BLAST-based classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+chomp($path = `which hmmsearch`);   # Get the path for hmmsearch
+if ($path eq "") {   # If the path is empty, then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: Could not locate HMMER binaries! It seems that hmmsearch is not installed properly.\
+Consult the manual for installation instructions. Note that HMMER3 is required. Previous HMMER-versions will not work.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the BLAST-based classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+
+## Check for database
+chomp($errormsg = `ls $profileDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+  print STDERR "FATAL ERROR :: The specified profile database could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the BLAST-based classification capabilities, use the metaxaQR_c program.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($input ne "") {  # If an input file is specified
+  chomp($errormsg = `ls $input* 2>&1 1>/dev/null`);   # Get the error msg when looking for the input file
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+    print STDERR "FATAL ERROR :: The specified input file could not be found.\
+MetaxaQR will now abort.\n";
+    print STDERR "-----------------------------------------------------------------\n";
+    exit;
+  }
+}
+
+
+if ($pipeline == 0) {   # If metaxaQR_x is not run in pipeline mode (i.e. from metaxaQR)
+  if ($out_date == 1) {   # If a date and time stamp should be supplied
+    ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);   # Get the date and time
+    $year = $year + 1900;   # Format the year
+    $mon = $mon + 1;   # Format the month
+    if ($mon < 10) {   # Add a zero to the month, if needed
+      $mon = "0" . $mon;
+    }
+    if ($mday < 10) {   # Add a zero to the day, if needed
+      $mday = "0" . $mday;
+    }
+    if ($hour < 10) {   # Add a zero to the hour, if needed
+      $hour = "0" . $hour;
+    }
+    if ($min < 10) {   # Add a zero to the minute, if needed
+      $min = "0" . $min;
+    }
+    $outputDate = ".$year\-$mon\-$mday\_$hour.$min";   # Create a date and time stamp
+    $outputDate =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+    $output = $output . $outputDate;   # Add the date and time stamp top the output base name
+  }
+}
+
+if ($tempDir eq "") {
+  $tempDir = "metaxa_temp_directory__$output";   # Setup a temporary directory variable
+  $tempDir =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
+}
+
+if ($pipeline == 0) {   # If not running in pipeline mode
+  ## Create a summary file
+  if ($out_sum == 1) {   # If summary output is on
+    $now = localtime;   # Get the current time
+    open (SUMMARY, ">$output.summary.txt");   # Create the summary file
+    print SUMMARY "MetaxaQR_x run started at $now.\n";   # Output the starting time for the analysis
+    print SUMMARY "-----------------------------------------------------------------\n";
+    close (SUMMARY);   # Close summary file
+  }
+}
+
+## Create a temporary directory for Metaxa
+if ($pipeline == 0) {   # If metaxa_x is not run in pipeline mode (i.e. from metaxa)
+  `mkdir $tempDir 2> /dev/null`;   # Create a temporary directory
+}
+
+## Get the total memory available
+open (MEMFILE, "/proc/meminfo");  #  Open the memory information "file"
+while (chomp($line = <MEMFILE>)) {  # Read from this file
+  if (substr($line, 0, 9) eq "MemTotal:") {  # If this is the total memoryline
+    $line =~ s/  */ /g;  # Remove extra spaces
+    ($blah,$memtotal,$kblah) = split(' ',$line);  # Extract total memory value
+    if ($kblah eq "kB") {  # If value given in kilobytes
+      $memtotal = $memtotal * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "MB") {  # If value given in megabytes
+      $memtotal = $memtotal * 1024 * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "GB") {  # If value given in gigabytes
+      $memtotal = $memtotal * 1024 * 1024 * 1024;  # Convert memory value to bytes
+    }
+    if ($kblah eq "TB") {  # If value given in terabytes
+      $memtotal = $memtotal * 1024 * 1024 * 1024 * 1024;  # Convert memory value to bytes
+    }
+  }
+}
+close (MEMFILE);  # Close memory file
+
+if ($memtotal == 0) {  # If the total memory could not be determined for some reason
+  $memtotal = 1024 * 1024 * 1024;  # Reserve 1GB of RAM, who does not have that??
+}
+
+
+
+## Prepare profile database
+## Get the current time and output info message
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Preparing HMM database (should be quick)...\n";
+}
+
+@profileList = split(',',$type);   # Get the list of profile types
+foreach $entry (@profileList) {   # Go through the entered types
+  if (($entry eq "all") || ($entry eq "A")) {   # If "all" or "A" is among the entries
+    
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/A.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {   # If the error message not begins with "ls: "
+      push(@profileSet,"A");   # Add the archaea profiles to the investigation set
+    }
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/B.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {    # If the error message not begins with "ls: "
+      push(@profileSet,"B");   # Add the bacteria profiles to the investigation set
+    }
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/C.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {    # If the error message not begins with "ls: "
+      push(@profileSet,"C");   # Add the chloroplast profiles to the investigation set
+    }
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/E.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {    # If the error message not begins with "ls: "
+      push(@profileSet,"E");   # Add the eukaryota profiles to the investigation set
+    }
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/M.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {    # If the error message not begins with "ls: "
+      push(@profileSet,"M");   # Add the mitochondrial 16S profiles to the investigation set
+    }
+    ## Check for profiles
+    chomp($errormsg = `ls $profileDB/N.hmm 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+    if (substr($errormsg,0,4) ne "ls: ") {    # If the error message not begins with "ls: "
+      push(@profileSet,"N");   # Add the mitochondrial 12S profiles to the investigation set
+    }
+  }
+  ## Archaea
+  if ((substr($entry,0,1) eq "a") && ($entry ne "all")) {   # If the first charachter of the entry is "a", but the complete entry not is "all"
+    push(@profileSet,"A");   # Add the archaea profiles to the investigation set
+  }
+  ## Bacteria
+  if (substr($entry,0,1) eq "b") {   # If the first charachter of the entry is "b"
+    push(@profileSet,"B");   # Add the bacteria profiles to the investigation set
+  }
+  ## Eukaryota
+  if (substr($entry,0,1) eq "e") {   # If the first charachter of the entry is "e"
+    push(@profileSet,"E");   # Add the eukaryota profiles to the investigation set
+  }
+  ## Chloroplasts
+  if (substr($entry,0,1) eq "c") {   # If the first charachter of the entry is "c"
+    push(@profileSet,"C");   # Add the chloroplast profiles to the investigation set
+  }
+  ## Mitochondria
+  if (substr($entry,0,1) eq "m") {   # If the first charachter of the entry is "m"
+    push(@profileSet,"M");   # Add the mitochondrial 16S profiles to the investigation set
+    if ($gene ne "5s") {
+      push(@profileSet,"N");   # Add the mitochondrial 12S profiles to the investigation set
+    }
+  }
+  ## Other (this is an 'undocumented' feature)
+  if (substr($entry,0,1) eq "o") {   # If the first charachter of the entry is "o"
+      push(@profileSet,"O");   # Add a potential set of 'other' (custom) profiles to the investigation set
+    }
+}
+
+  ## Metaxa expects to find files named "A.hmm", "B.hmm", "E.hmm", "M.hmm", "N.hmm", "C.hmm" (and "O.hmm") in the database directory...
+foreach $set (@profileSet) {   # For each set of profiles in the the full profile set for investigation
+  $hmmPath = $profileDB . "/" . $set . ".hmm";   # Determine the path to the HMM-file
+  chomp($modelCount = `grep -c "//" $hmmPath`);   # Count the number of models in the HMM-file
+  push(@modelCount,$modelCount);   # Add the number of models in this HMM-file to the list of model counts
+  if ($reset == 1) {  # If HMM-data should be reset
+    `rm -f $hmmPath.h3* 2> /dev/null`;   # Delete old HMM-files
+    `hmmpress $hmmPath 2> /dev/null`;   # Prepare the HMM-file for searching
+    ## Redirecting stderr is a quick and dirty solution to get rid of the messages... Could be made more elegant
+  }
+}
+
+## Clean-up input files and create complementary strand if needed
+## Get the current time and output an info message
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Checking and handling input sequence data (should not take long)...\n";
+}
+
+## Open the summary file for writing
+if ($out_sum == 1) {   # If summary output is on
+  open (SUMMARY, ">>$output.summary.txt");   # Append to the summary file
+}
+
+$curmem = 0;  # Reset the memory tracker
+$filenumber = 1;  # Reset the file number counter
+
+if ($input ne "") {   # If an input file is given
+  ## Read from file
+  open (SEQUENCES, $input);   # Open the input file for reading
+  open (MAIN, ">$tempDir/main.$filenumber.fasta");   # Create a temporary file for storing the cleaned sequences representing the main strand
+  open (COMPLEMENT, ">$tempDir/complement.$filenumber.fasta");   # Create a temporary file for storing the cleaned sequences representing the complementary strand
+  open (PAIRINFO, ">$tempDir/pairinfo.$filenumber.txt");  # Create a temporary file with the pair information
+  $inputSequenceCount = 0;   # Reset input sequence counter
+  while ($sequence = <SEQUENCES>) {   # Repeat for every line in the input file
+    chomp($sequence);   # Truncate any potential line feeds
+    $sequence =~ tr/\r\n//d;  # Remove all carriage return and new line characters
+    if (substr($sequence,0,1) eq ">") {   # If a new FASTA entry is found in the input file
+      ($inputQueryID) = split(' ',$sequence);  # Extract the sequence ID
+      if ($filenumber == 1) {
+	push(@inputQueries, substr($inputQueryID,1));  # Save the sequence ID for later
+      }
+      $inputSequenceCount++;   # Add one to the input sequence counter
+      if ($mainSeq ne "") {  # If the sequence is not empty
+	print MAIN $mainSeq . "\n";   # Write the previous main DNA sequence to the main sequence file
+	if ($complement == 1) {   # If the complementary file should be written
+	  $complementSeq = reverse($complementSeq);   # Reverse the complementary DNA sequence
+	  print COMPLEMENT $complementSeq . "\n";   # Write the previous complementary DNA sequence to the complementary sequence file
+	}
+      }
+      if ($curmem > $memtotal / 4) {  # If memory usage is approaching too high levels
+	close (MAIN);
+	close (COMPLEMENT);
+	close (PAIRINFO);
+	$filenumber++;
+	$curmem = 0;
+	open (MAIN, ">$tempDir/main.$filenumber.fasta");   # Create a new temporary file for storing the cleaned sequences representing the main strand
+	open (COMPLEMENT, ">$tempDir/complement.$filenumber.fasta");   # Create a new temporary file for storing the cleaned sequences representing the complementary strand
+	open (PAIRINFO, ">$tempDir/pairinfo.$filenumber.txt");  # Create a temporary file with the pair information
+      }
+      print MAIN substr($sequence,0,60) . " main\n";   # Write the definition line of the new sequence to the main sequence file, limit the defline to 60 characters to avoid BLAST error in classification step
+      print PAIRINFO "$sequenceID $deflinePairInfo\n";  # Write pair info to the pair info file
+
+      $curmem = $curmem + length($mainSeq) + length($sequenceID) + length($sequenceID) + length($definePairInfo);  # Add more data to the memory tracker
+      @deflineItems = split(' ',$sequence);
+      foreach $defItem (@deflineItems) {  # Find paired-end info
+	if (substr($defItem, 0, 6) eq "&PAIR&") {
+	  $deflinePairInfo = $defItem;
+	}
+      }
+      ($sequenceID) = split(" ",substr($sequence,1,60));
+      $mainSeq = "";   # Empty the main sequence entry
+      if ($complement == 1) {   # If the complementary file should be written
+	print COMPLEMENT substr($sequence,0,60) . " complement\n";   # Write the definition line of the new sequence to the complement sequence file, limit the defline to 60 characters to avoid BLAST error in classification step
+	$complementSeq = "";   # Empty the complementary sequence entry
+      }
+    } else {    # If this line is just a continuation of the current DNA sequence
+      $mseq = $sequence;   # Store this part of the DNA sequence in the intermediate varaible $mseq
+      $mseq =~ s/[ .-]//g;   # Remove any gap characters present in this sequence part (good if input was an alignment)
+      $mseq =~ tr/[a-z]/[A-Z]/;   # Make all letters uppercase
+      $mseq =~ s/[^A-Z]//g;  # Remove all non-alphabetic characters
+      $mseq =~ tr/U/T/;   # Exchanges U:s for T:s (Uracil to Thymine, good if input was RNA sequence)
+      $mainSeq = $mainSeq . $mseq;   # Add the intermediate DNA sequence to the end of the main DNA sequence entry
+      
+      if ($complement == 1) {   # If the complementary file should be written
+	$cseq = $sequence;   # Store this part of the DNA sequence in the intermediate varaible $cseq
+	$cseq =~ s/[ .-]//g;   # Remove any gap characters present in this sequence part (good if input was an alignment)
+	$cseq =~ tr/[a-z]/[A-Z]/;   # Make all letters uppercase
+	$cseq =~ s/[^A-Z]//g;  # Remove all non-alphabetic characters
+	$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/;   # Replace all characters with its complementary base
+	$complementSeq = $complementSeq . $cseq;   # Add the intermediate DNA sequence to the end of the complementary DNA sequence entry
+      }
+    }
+  }
+  ## When the input file's end is reached
+  print MAIN $mainSeq . "\n";   # Write the last main DNA sequence to the main sequence file
+  if ($complement == 1) {   # If the complementary file should be written
+    $complementSeq = reverse($complementSeq);   # Reverse the complementary DNA sequence
+    print COMPLEMENT $complementSeq . "\n";   # Write the last complementary DNA sequence to the complementary sequence file
+  }
+  print PAIRINFO "$sequenceID $deflinePairInfo\n";  # Write pair info to the pair info file
+
+  $mainSeq = "";   # Empty the main sequence entry
+  $complementSeq = "";   # Empty the complementary sequence entry
+  close (SEQUENCES);   # Close the sequence input file
+  close (COMPLEMENT);   # Close the complementary output file
+  close (MAIN);   # Close the main output file
+  close (PAIRINFO);  # Close the pair info file
+} else {   # If no input file is supplied, then read from stdin instead
+  $input = "$tempDir/main.$filenumber.fasta";   # Set up a temporary input file path
+  open (MAIN, ">$tempDir/main.$filenumber.fasta");   # Create a temporary file for storing the cleaned sequences representing the main strand
+  open (COMPLEMENT, ">$tempDir/complement.$filenumber.fasta");   # Create a temporary file for storing the cleaned sequences representing the complementary strand
+  open (PAIRINFO, ">$tempDir/pairinfo.$filenumber.txt");  # Create a temporary file with the pair information
+  $inputSequenceCount = 0;   # Reset input sequence counter
+  while ($sequence = <STDIN>) {   # Repeat for every line in the standard input
+    chomp($sequence);   # Truncate any potential line feeds
+    if (substr($sequence,0,1) eq ">") {   # If a new FASTA entry is found in the input
+      ($inputQueryID) = split(' ',$sequence);  # Extract the sequence ID
+      if ($filenumber == 1) {
+	push(@inputQueries, substr($inputQueryID,1));  # Save the sequence ID for later
+      }
+      $inputSequenceCount++;   # Add one to the input sequence counter
+      if ($mainSeq ne "") {  # If the sequence is not empty
+	print MAIN $mainSeq . "\n";   # Write the previous main DNA sequence to the main sequence file
+	if ($complement == 1) {   # If the complementary file should be written
+	  $complementSeq = reverse($complementSeq);   # Reverse the complementary DNA sequence
+	  print COMPLEMENT $complementSeq . "\n";   # Write the previous complementary DNA sequence to the complementary sequence file
+	}
+      }
+      if ($curmem > $memtotal / 4) {  # If memory usage is approaching too high levels
+	close (MAIN);
+	close (COMPLEMENT);
+	close (PAIRINFO);
+	$filenumber++;
+	$curmem = 0;
+	open (MAIN, ">$tempDir/main.$filenumber.fasta");   # Create a new temporary file for storing the cleaned sequences representing the main strand
+	open (COMPLEMENT, ">$tempDir/complement.$filenumber.fasta");   # Create a new temporary file for storing the cleaned sequences representing the complementary strand
+	open (PAIRINFO, ">$tempDir/pairinfo.$filenumber.txt");  # Create a temporary file with the pair information
+      }
+      if ($sequence =~ m/ &PAIR&/) {
+	$pairInfo = $sequence;
+	$pairInfo =~ s/.* &PAIR&/&PAIR&/;
+      } else {
+	$pairInfo = "";
+      }
+      print MAIN substr($sequence,0,60) . " main $pairInfo\n";   # Write the definition line of the new sequence to the main sequence file, limit the defline to 60 characters to avoid BLAST error in classification step
+      print PAIRINFO "$sequenceID $deflinePairInfo\n";  # Write pair info to the pair info file
+
+      $curmem = $curmem + length($mainSeq) + length($sequenceID) + length($sequenceID) + length($definePairInfo);  # Add more data to the memory tracker
+      @deflineItems = split(' ',$sequence);
+      foreach $defItem (@deflineItems) {  # Find paired-end info
+	if (substr($defItem, 0, 6) eq "&PAIR&") {
+	  $deflinePairInfo = $defItem;
+	}
+      }
+      ($sequenceID) = split(" ",substr($sequence,1,60));
+      $mainSeq = "";   # Empty the main sequence entry
+      if ($complement == 1) {   # If the complementary file should be written
+	print COMPLEMENT substr($sequence,0,60) . " complement $pairInfo\n";   # Write the definition line of the new sequence to the complement sequence file, limit the defline to 60 characters to avoid BLAST error in classification step
+	$complementSeq = "";   # Empty the complementary sequence entry
+      }
+    } else {    # If this line is just a continuation of the current DNA sequence
+      $mseq = $sequence;   # Store this part of the DNA sequence in the intermediate varaible $mseq
+      $mseq =~ s/[ .-]//g;   # Remove any gap characters present in this sequence part (good if input was an alignment)
+      $mseq =~ tr/[a-z]/[A-Z]/;   # Make all letters uppercase
+      $mseq =~ s/[^A-Z]//g;  # Remove all non-alphabetic characters
+      $mseq =~ tr/U/T/;   # Exchanges U:s for T:s (Uracil to Thymine, good if input was RNA sequence)
+      $mainSeq = $mainSeq . $mseq;   # Add the intermediate DNA sequence to the end of the main DNA sequence entry
+      
+      if ($complement == 1) {   # If the complementary file should be written
+	$cseq = $sequence;   # Store this part of the DNA sequence in the intermediate varaible $cseq
+	$cseq =~ s/[ .-]//g;   # Remove any gap characters present in this sequence part (good if input was an alignment)
+	$cseq =~ tr/[a-z]/[A-Z]/;   # Make all letters uppercase
+	$cseq =~ s/[^A-Z]//g;  # Remove all non-alphabetic characters
+	$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/;   # Replace all characters with its complementary base
+	$complementSeq = $complementSeq . $cseq;   # Add the intermediate DNA sequence to the end of the complementary DNA sequence entry
+      }
+    }
+  }
+  ## When the input file's end is reached
+  print MAIN $mainSeq . "\n";   # Write the last main DNA sequence to the main sequence file
+  if ($complement == 1) {   # If the complementary file should be written
+    $complementSeq = reverse($complementSeq);   # Reverse the complementary DNA sequence
+    print COMPLEMENT $complementSeq . "\n";   # Write the last complementary DNA sequence to the complementary sequence file
+  }
+  print PAIRINFO "$sequenceID $deflinePairInfo\n";  # Write pair info to the pair info file
+
+  $mainSeq = "";   # Empty the main sequence entry
+  $complementSeq = "";   # Empty the complementary sequence entry
+  close (COMPLEMENT);   # Close the complementary output file
+  close (MAIN);   # Close the main output file
+  close (PAIRINFO);  # Close the pair info file
+}
+
+## Free up memory
+undef %sequenceDB;
+undef %pairDB;
+
+if ($out_sum == 1) {   # If summary output should be written
+  print SUMMARY "Number of sequences in input file:       \t$inputSequenceCount\n";   # Write info on the number of input sequences to the summary file
+}
+
+## Perform HMM-scan
+for ($fn = 1; $fn <= $filenumber; $fn++) {
+  undef @pids;  # Empty active PIDs array
+  if ($hmmsearch eq "") {   # If a pre-computed hmmsearch output file is not supplied
+    if ($heuristics == 0) {  # If HMMER's heuristic filtering should not be used
+      $heurMax = "--max";  # Set the heurMax to "--max" (indicating that HMMER should turn off filtering)
+    } else {
+      $heurMax = "";  # Set the heurMax to empty (indicating that HMMER should turn on filtering)
+    }
+    if ($multi_thread == 0) {   # If multi-threading is off
+      ## Get the current time and output info message
+      $now = localtime;
+      if ($silent == 0) {
+	print STDERR "$now : Comparing sequences to HMM database (this may take a long while)...\n";
+      }
+      foreach $set (@profileSet) {   # Go sequentially through all profile sets to search for
+	$hmmPath = $profileDB . "/" . $set . ".hmm";   # Set the path to the HMM-file of the current set
+	if ($search_eval ne "") {   # If E-value cutoff is use for the search
+	  hmmerSearch("hmmsearch --cpu $cpu $heurMax -E $search_eval --incE $search_eval $hmmPath $tempDir/main.$fn.fasta","$tempDir/main.$fn.$set.hmmsearch","M");   # Call HMMER with E-value cutoff
+	} else {   # If score cutoff is use for the search
+	  hmmerSearch("hmmsearch --cpu $cpu $heurMax -T $search_score --incT $search_score $hmmPath $tempDir/main.$fn.fasta","$tempDir/main.$fn.$set.hmmsearch","M");   # Call HMMER with score cutoff
+	}
+	if ($complement == 1) {   # If the complementary file should be scanned
+	  if ($search_eval ne "") {   # If E-value cutoff is use for the search
+	    hmmerSearch("hmmsearch --cpu $cpu $heurMax -E $search_eval --incE $search_eval $hmmPath $tempDir/complement.$fn.fasta","$tempDir/complement.$fn.$set.hmmsearch","C");   # Call HMMER with E-value cutoff
+	  } else {   # If score cutoff is use for the search
+	    hmmerSearch("hmmsearch --cpu $cpu $heurMax -T $search_score --incT $search_score $hmmPath $tempDir/complement.$fn.fasta","$tempDir/complement.$fn.$set.hmmsearch","C");   # Call HMMER with score cutoff
+	  }
+	}
+      }
+    } else {   # If multi-threading is on
+      ## Get the current time and output info message
+      $now = localtime;
+      if ($silent == 0) {
+	print STDERR "$now : Doing paralellised comparison to HMM database (this may take a long while)...\n";
+      }
+      
+      ## Determining number of cpus per thread
+      if ($complement == 1) {   # If the complementary file should be scanned
+	$hmmcpu = int(0.5 * $cpu / (scalar(@profileSet) + 1));   # Assign X CPUs to each thread, X = 0.5 * (TOTAL_CPUs_USED) / (TOTAL_NUMBER_OF_PROFILE_SETS)
+      } else {   # If the complementary file should not be scanned
+	$hmmcpu = int($cpu / (scalar(@profileSet) + 1));   # Assign X CPUs to each thread, X = (TOTAL_CPUs_USED) / (TOTAL_NUMBER_OF_PROFILE_SETS)
+      }
+      if ($hmmcpu < 1) {   # If the number of CPUs per thread is smaller than 1
+	$hmmcpu = 1;   # Give each thread at least one CPU to work on
+      }
+      ## Main strand searches...
+      foreach $set (@profileSet) {   # Go through each profile set to investigate
+	$pid = fork();   # Fork off a copy of this process for this set
+	if ($pid != 0) {   # If this is the parent process
+	  push(@pids,$pid);   # Add the new process ID to the list of active process IDs
+	} else {   # If this is the new child process
+	  $hmmPath = $profileDB . "/" . $set . ".hmm";   # Set the path to the HMM-file of the current set
+	  if ($search_eval ne "") {   # If E-value cutoff is use for the search
+	    hmmerSearch("hmmsearch --cpu $hmmcpu $heurMax -E $search_eval --incE $search_eval $hmmPath $tempDir/main.$fn.fasta","$tempDir/main.$fn.$set.hmmsearch","M");   # Call HMMER with E-value cutoff
+	  } else {   # If score cutoff is use for the search
+	    hmmerSearch("hmmsearch --cpu $hmmcpu $heurMax -T $search_score --incT $search_score $hmmPath $tempDir/main.$fn.fasta","$tempDir/main.$fn.$set.hmmsearch","M");   # Call HMMER with score cutoff
+	  }
+	  ## Stop child process...
+	  exit;   # Exits the child process
+	}
+      }
+      ## Reverse strand searches...
+      if ($complement == 1) {   # If the complementary file should be scanned
+	foreach $set (@profileSet) {   # Go through each profile set to investigate
+	  $pid = fork();   # Fork off a copy of this process for this set
+	  if ($pid != 0) {   # If this is the parent process
+	    push(@pids,$pid);   # Add the new process ID to the list of active process IDs
+	  } else {   # If this is the new child process
+	    $hmmPath = $profileDB . "/" . $set . ".hmm";   # Set the path to the HMM-file of the current set
+	    if ($search_eval ne "") {   # If E-value cutoff is use for the search
+	      hmmerSearch("hmmsearch --cpu $hmmcpu $heurMax -E $search_eval --incE $search_eval $hmmPath $tempDir/complement.$fn.fasta","$tempDir/complement.$fn.$set.hmmsearch","C");   # Call HMMER with E-value cutoff
+	    } else {   # If score cutoff is use for the search
+	      hmmerSearch("hmmsearch --cpu $hmmcpu $heurMax -T $search_score --incT $search_score $hmmPath $tempDir/complement.$fn.fasta","$tempDir/complement.$fn.$set.hmmsearch","C");   # Call HMMER with score cutoff
+	    }
+	    ## Stop child process...
+	    exit;   # Exits the child process
+	  }
+	}
+      }
+      ## Get the current time and output the active process IDs
+      $now = localtime;
+      print STDERR "    $now : Active PIDs: ";
+      foreach $p (@pids) {   # Go through the list of PIDs
+	print STDERR "$p ";   # Print the PID
+      }
+      print STDERR "\n";   # Print a new line
+      do {   # Loop until all child PIDs have finished.
+	$deceasedPID = wait();   # Wait until a PID is finished, and gather its number
+	$now = localtime;   # Get the current time
+	if ($deceasedPID > -1) {   # If the PID that finished wasn't the last active one
+	  print STDERR "    $now : PID $deceasedPID finished.\n";   # Print finished PID
+	} else {   # If PID that finished was the last
+	  print STDERR "    $now : All processes finished.\n";   # Print that all PIDs have finished
+	}
+      } until (wait() == -1);   # Do this loop until all PIDs have finished
+      $now = localtime;   # Get current time
+      print STDERR "$now : Parallel HMM-scan finished.\n";   # Print informative finishing message
+    }
+  } else {    # If a pre-computed hmmsearch file is supplied then
+    ## Get the current time and output that the hmmsearch step is skipped
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Skipping hmmsearch! Using $hmmsearch as input for the analysis instead.\n";
+    }
+  }
+}
+
+## Analyse HMM-scan output
+## Get the current time and output info
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Analysing results of HMM-search (this might take quite some time)...\n";
+}
+
+## Read profile names
+undef %profileNames;  # Empty the profile names DB
+undef %profileTags;  # Empty the profile names DB
+open (HMMNAMES, $profileDB . "/hmm_names.txt");  # Open the HMM-profile names file
+while (chomp($line = <HMMNAMES>)) {  # Read the names file line by line
+  if ($line ne "") {  # If line is non-empty
+    ($hmmname,$showname,$tag) = split('\t',$line);  # Split line
+    $profileNames{"$hmmname"} = $showname;  # Add name to the names DB
+    $profileTags{"$hmmname"} = $tag;  # Add tag to the tags DB
+  }
+}
+close (HMMNAMES);  # Close name file
+
+## Set up output files
+if ($out_table == 1) {   # If table output is on
+  open (TABLE, ">$output.hmmer.table");   # Create a table output file
+}
+if ($out_graph == 1) {   # If graphical output is on
+  open (GRAPH, ">$output.graph");   # Create a graph output file
+}
+if ($out_not == 1) {   # If not-found output is on
+  open (NOTFOUND, ">$tempDir/hmmer_not_found.txt");   # Create a HMMER not-found output file
+}
+
+for ($fn = 1; $fn <= $filenumber; $fn++) {  # For all sequence files
+
+  
+  undef %sequenceDB;  # Empty the sequence DB
+  undef %pairDB;  # Empty the pair info DB
+  undef @inputQueries;  # Empty the input queries array
+  open (MAIN, "$tempDir/main.$fn.fasta");   # Open the temporary file for storing the cleaned sequences representing the main strand
+  $sequenceID = "";
+  while ($sequence = <MAIN>) {   # Repeat for every line in the sequence file
+    chomp($sequence);   # Truncate any potential line feeds
+    if (substr($sequence,0,1) eq ">") {   # If a new FASTA entry is found in the input
+      if ($sequenceID ne "") {
+	$sequenceDB{"$sequenceID"} = $mainSeq;  # Add sequence to sequence database
+      }
+      ($sequenceID) = split(' ',$sequence);  # Extract the sequence ID
+      $sequenceID = substr($sequenceID,1);  # Remove the > character at the start of the seq ID
+      $mainSeq = "";  # Empty the DNA sequence
+    } else {
+      $mainSeq = $mainSeq . $sequence;  # Read the DNA sequence
+    }
+  }
+  if ($sequenceID ne "") {
+    $sequenceDB{"$sequenceID"} = $mainSeq;  # Add sequence to sequence database
+  }
+  close(MAIN);
+
+
+  open (PAIRINFO, "$tempDir/pairinfo.$fn.txt");  # Open the corresponding temporary file with the pair information
+  while (chomp($info = <PAIRINFO>)) {  # Read the pair info line by line
+    ($seqID,$info) = split(' ',$info);  # Split up the sequence ID and the actual pair info
+    $pairDB{"$seqID"} = $info;  # Add paired-end info to the database
+    push(@inputQueries, $seqID);  # Save the sequence ID for later
+  }
+  close (PAIRINFO);  # Close the pair info file
+
+  $setI = 0;   # Set the profile set indicator to zero
+  foreach $set (@profileSet) {   # Go through all the profile sets to be investigated
+    if ($debug == 1) {
+      print STDERR "Going through profile set $set..." . "\n";
+    }
+    for ($co = 0; $co <= 1; $co++) {   # Do main (and complementary) strand analysis in order
+      if ($co > 0) {   # If main strand analysis is finished
+	if ($complement == 1) {   # If complementary strand should be analysed
+	  open (HMMOUTPUT, "$tempDir/complement.$fn.$set.hmmsearch");   # Open hmmsearch output for reading
+	  if ($out_table == 1) {   # If table output is on, write a header for this set
+	    print TABLE "***********************************************************\n";
+	    print TABLE "$set matches on complementary strand:\n";
+	  }
+	  if ($out_graph == 1) {   # If graphical output is on, write a header for this set
+	    print GRAPH "***********************************************************\n";
+	    print GRAPH "$set matches on complementary strand:\n";
+	  }
+	} else {   # If complementary strand should not be analysed
+	  last;   # Exit this loop
+	}
+      }
+      if ($co == 0) {   # If main strand analysis is not finished
+	open (HMMOUTPUT, "$tempDir/main.$fn.$set.hmmsearch");   # Open hmmsearch output for reading
+	if ($out_table == 1) {   # If table output is on, write a header for this set
+	  print TABLE "***********************************************************\n";
+	  print TABLE "$set matches on main strand:\n";
+	}
+	if ($out_graph == 1) {   # If graphical output is on, write a header for this set
+	  print GRAPH "***********************************************************\n";
+	  print GRAPH "$set matches on main strand:\n";
+	}
+      }
+      ## Read and analyse hmmsearch output file
+
+      undef %hits;   # Empty the hits hash
+      undef %evals;   # Empty the e-value hash
+      undef %scores;   # Empty the score hash
+
+      while ($line = <HMMOUTPUT>) {   # Read in the hmmsearch output file, line by line
+	chomp($line);   # Remove any potential line feeds
+	if (substr($line,0,13) eq "## New query:") {   # If this line begin with "## New query:", then this is a new entry
+
+	  $querytemp = substr($line,14);   # Extract everything from this line, except for the start ("## New query:")
+	  ($currentProfile,$length) = split('\t',$querytemp);  # Split query name, length and DNA sequence
+	} else {
+	  if ($line ne "//") {
+	    ## Find domain annotations...
+	    ($query,$matchProfile,$length,$domNo,$sign,$score,$bias,$cE,$iE,$hmmFrom,$hmmTo,$hmmends,$queryFrom,$queryTo,$queryends,$envFrom,$envTo,$envends,$acc) = split('\t',$line);   # Split the line into a collection of stat variables
+	    $matchProfile = substr($matchProfile,0,3);  # Limit the profile name to three characters
+	    $query_profile_match = $query . ":" . $matchProfile;
+	    $profileExists = 0;   # Assume that the newly found match profile ($matchProfile) is not already found for this sequence
+	    if (exists($hits{$query_profile_match})) {   # If a profile in the list is the same as the match profile
+	      ($hitQuery,$hitFrom,$hitTo,$hitProfile,$hitScore,$hitE) = split('\t',$hits{$query_profile_match});   # Split the entry in list into stat variables
+	      if ($iE < $hitE) {   # If the new match profile has a smaller E-value than the one from the list
+		$hits{$query_profile_match} = "$query\t$matchProfile\t$queryFrom\t$queryTo\t$score\t$iE";   # Replace the data in the hit list with the data for the newly found match profile
+		$evals{$query_profile_match} = $iE;   # Replace the E-value in the hit list with the E-value for the newly found match profile
+		$scores{$query_profile_match} = $score;   # Replace the score in the hit list with the score for the newly found match profile
+		}
+	      $profileExists = 1;   # Indicate that this match profile was found in the hit list
+	    }
+	    if ($profileExists == 0) {   # If the match profile was not found in the hit list
+	      $hits{$query_profile_match} = "$query\t$matchProfile\t$queryFrom\t$queryTo\t$score\t$iE";   # Add the profile to the hit list
+	      $evals{$query_profile_match} = $iE;   # Add the E-value for the profile match to the E-value list
+	      $scores{$query_profile_match} = $score;   # Add the score for the profile match to the score list
+	    }
+	  }
+	}
+      }
+      
+      close (HMMOUTPUT);	# Close the hmmsearch output file
+
+      @hitKeys = sort(keys(%hits));  # Sort the hits according to query IDs
+
+      undef @fullHits;  # Empty the full hits array
+      foreach $key (@hitKeys) {  # For each profile name
+	push(@fullHits,$hits{$key});  # Add the hits sorted by query IDs
+      }
+    
+      ## Check for not-found IDs
+      if ($out_not == 1) {   # If not-found output is on
+	## If this sequence didn't find any good-enough profile matches
+	foreach $inputQuery (@inputQueries) {  # For each input query
+	  undef @inputHits;  # Empty the hits list
+	  foreach $fullHit (@fullHits) {  # Go through each hit to the profile
+	    if (substr($fullHit,0,length($inputQuery)+1) eq "$inputQuery\t") {  # If the input query matches the profile hit
+	      push(@inputHits,$fullHit);  # Add the match to the list of hits
+	    }
+	  }
+	  if (scalar(@inputHits) == 0) {  # If the number of hits to the profile were zero
+	    push(@notfoundList,$inputQuery);   # Add the name of this query to the not-found list
+	    print NOTFOUND $inputQuery . "\n";   # Print the name of this query to the not-found list
+	  }
+	}
+      }
+      
+      undef @hits;   # Empty the hits array (so it can be reused)
+      undef @evals;   # Empty the e-value array
+      undef @scores;   # Empty the score array
+      $lastQuery = "";  # Empty the last query
+      for ($i = 0; $i <= scalar(@fullHits); $i++) {  # Go through the hits and make Metaxa's old post-processing happy
+	($hitQuery,$hitProfile,$hitFrom,$hitTo,$hitScore,$hitE) = split('\t',@fullHits[$i]);   # Split each entry in list into stat variables
+	if ((($hitQuery ne $lastQuery) || ($i == scalar(@fullHits))) && ($lastQuery ne "")) {  # If this new query is different from the last one, and is not the first query, process the last query
+	  
+	  $query = $lastQuery;
+	  ## Find corresponding FASTA sequence in input file
+	  $linecount = 0;
+	  $DNA = $sequenceDB{"$query"};
+	  $seqPairInfo = $pairDB{"$query"};  # Get pair info from database
+	  if ($seqPairInfo eq "") {  # If no pair info was found
+	    $length = length($DNA);  # Get the length of the DNA sequence
+	    $pairInsert = 0;
+	  } else {  # If there was pair info
+	    @pairFields = split('&',$seqPairInfo);  # Split up the pair info
+	    ($lab,$pairTrimA) = split(':',@pairFields[2]);
+	    ($lab,$pairTrimB) = split(':',@pairFields[3]);
+	    ($lab,$pairInsert) = split(':',@pairFields[4]);
+	    $insertSeq = "";
+	    for ($cnt = 0; $cnt < $pairInsert; $cnt++) {  # Create the insert sequence
+	      $insertSeq = $insertSeq . "N";
+	    }
+	    $DNA = substr($DNA, 0, $pairTrimA) . $insertSeq . substr($DNA, $pairTrimA);  # Insert the insert into the DNA sequence
+	    $length = length($DNA);  # Get the length of the new DNA sequence
+	  }
+
+	  if ($co == 1) {  # If the complementary strand is analysed
+	    $cseq = $DNA;   # Store the DNA sequence in the intermediate varaible $cseq
+	    $cseq =~ tr/[a-z]/[A-Z]/;   # Make all letters uppercase
+	    $cseq =~ s/[^A-Z]//g;  # Remove all non-alphabetic characters
+	    $cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/;   # Replace all characters with its complementary base
+	    $DNA = reverse($cseq);
+	  }
+	  
+	  ## Save analysis results
+	  @sortedHits = sort { $a <=> $b } @hits;   # Sort the the list of hits numerically ascending (smallest first)
+	  
+	  ## If the number of hits > N, the min eval < E and the max score > S then include query sequence
+	  ## OR if a single domain satisfies the thresholds and this is allowed, include it!
+	  if ( ((scalar(@hits) >= $N) && (min(@evals) <= $E) && (max(@scores) >= $S)) ||
+	       ((scalar(@hits) > 0) && ($allow_single_E >= 0) && (min(@evals) <= $allow_single_E) && (max(@scores) >= $allow_single_score)) ) {
+	    if ($debug == 1) {   # If debugging mode is on
+	      print $query . " :\t" . scalar(@hits) . "\t" . min(@evals) . "\t" . max(@scores) . "\n";   # Print some top hit statistics
+	    }
+	    
+	    ## Save some total stats to be able to determine origin of rRNA sequence
+	    if (scalar(@evals) > 0) {   # If there are any E-values stored
+	      $averageE = sum(@evals) / scalar(@evals);   # Calculate the average E-value for this profile set
+	      $averageScore = sum(@scores) / scalar(@scores);   # Calculate the average score for this profile set
+	      $numberOfDomains = scalar(@sortedHits);   # Calculate the number of domains matched on this sequence
+	      
+	      $scoreSum = sum(@scores) / @modelCount[$setI];   # Calculate score sum as: sum / (no. of profiles of this given type)
+	      
+	      $saveThis = "$query\t$set\t$co\t$numberOfDomains\t$averageE\t$averageScore\t$scoreSum\t$DNA\t"; # Collect the variables to save for this sequence and this profile set
+	      foreach $hit (@sortedHits) { # Go through the list of hits and add specific information to save from each hit
+		($hitFrom,$hitTo,$hitProfile,$hitScore,$hitE) = split('\t',$hit);	# Extract information from this hit
+		if ($hitFrom > $pairTrimA) {  # Add the insert if appropriate
+		  $hitFrom = $hitFrom + $pairInsert;
+		  if ($hitTo > $pairTrimA) {  # Add the insert if appropriate
+		    $hitTo = $hitTo + $pairInsert;
+		  }
+		}
+		$saveThis = $saveThis . "$hitFrom;$hitTo;$hitProfile;$hitScore;$hitE\t"; # Add information to the list of variables to save
+	      }
+	      
+	      push(@allHits, $saveThis); # Add this information to the collection of all hits for this sequence, across all profile sets
+	    }
+	    
+	    if ($out_table == 1) { # If table output is on
+	      print TABLE $query . "\t" . $length . "\t";	# Print query and length information to table
+	      foreach $hit (@sortedHits) { # Go through each hit in the hit list
+		($hitFrom,$hitTo,$hitProfile,$hitScore,$hitE) = split('\t',$hit);	# Extract data corresponding to this hit
+		$showProfile = $profileNames{"$hitProfile"};  # Get the show-name of this profile
+		print TABLE "$hitFrom - $hitTo: $showProfile ($hitScore, $hitE)\t"; # Print hit information to table
+	      }
+	      print TABLE "\n";   # Print new line
+	    }
+	    
+	    if ($out_graph == 1) { # If graphical output is on
+	      print GRAPH ">> " . $query . "\t" . $length . " bp\n"; # Print a sequence header
+	      $insertPoint = 0; # Set the domain insert point to beginning of line
+	      $hi = 0;	      # Set hit number to zero
+	      foreach $hit (@sortedHits) { # Go through the hit list
+		($hitFrom,$hitTo,$hitProfile,$hitScore,$hitE) = split('\t',$hit);	# Split the hit into stat variables
+		if ($hitFrom > $pairTrimA) {  # Add the insert if appropriate
+		  $hitFrom = $hitFrom + $pairInsert;
+		  if ($hitTo > $pairTrimA) {  # Add the insert if appropriate
+		    $hitTo = $hitTo + $pairInsert;
+		  }
+		}
+		if ($graph_scale == 0) { # If the graph scale is scaled individually to 100% for each sequence
+		  $pFrom = $hitFrom / $length * 100; # Set the profile start on graph relative to its position in the sequence
+		  $pTo = $hitTo / $length * 100; # Set the profile end on graph relative to its position in the sequence
+		  $pEnd = 100; # Set the end of the sequence graph to be at 100
+		} else {	  # If the scale is the same for all sequences
+		  $pFrom = $hitFrom * $graph_scale; # Set the profile start on graph scaled to the parameter given
+		  $pTo = $hitTo * $graph_scale; # Set the profile end on graph scaled to the parameter given
+		  $pEnd = $length * $graph_scale;	# Set the end of the sequence graph to be at the end of the sequence scaled to the parameter given
+		}
+		for ($insertPoint = $insertPoint; $insertPoint <= $pFrom; $insertPoint++) {   # Go forward through the sequence, moving the insert point one step at a time until the beginning of the next profile is reached
+		  print GRAPH "-";	# Print a "-"
+		}
+		$showProfile = $profileNames{"$hitProfile"};  # Get the show-name of this profile
+		print GRAPH $showProfile; # When the profile is reached, print its name
+		$insertPoint = $insertPoint + 3; # Move the insert point three steps forward, to account for the inserted name
+		($nextHitStart,$nextHitEnd,$nextProfile) = split('\t',@sortedHits[$hi + 1]); # Check where the next hit in the list is located
+		if ($nextHitStart > $pairTrimA) {  # Add the insert if appropriate
+		  $nextHitStart = $nextHitStart + $pairInsert;
+		}
+		if ($nextHitEnd > $pairTrimA) {  # Add the insert if appropriate
+		  $nextHitEnd = $nextHitEnd + $pairInsert;
+		}
+		if (($nextHitStart <= $hitTo) && ($nextHitStart > 0)) { # If the next hit in the list overlaps with this profile
+		  if ($graph_scale == 0) { # If the scale is relative
+		    $pTo = $nextHitStart / $length * 100 - 1; # Change the profile end on the graph to be where this next profile starts
+		  } else {  # If the scale is the same for all sequences
+		    $pTo = $nextHitStart * $graph_scale - 1; # Change the profile end on the graph to be where this next profile starts
+		  }
+		}
+		for ($insertPoint = $insertPoint; $insertPoint <= $pTo; $insertPoint++) {	# Go forward through the sequence, moving the insert point one step at a time until the end of the current profile is reached
+		  print GRAPH "="; # Print a "="
+		}
+		if (($nextHitStart <= $hitTo) && ($nextHitStart > 0)) { # If the next hit in the list overlaps with this profile
+		  print GRAPH ">"; # Print a ">" to indicate the profile overlap
+		  $insertPoint++;	# Move the insert point one additional step forward to account for the ">" inserted
+		}
+		$hi++;		# Increase the hit number by one
+	      }
+	      for ($insertPoint = $insertPoint; $insertPoint <= $pEnd; $insertPoint++) { # If there is no more profile matches to sequence, go forward through the sequence, moving the insert point one step at a time until the end of the sequence is reached
+		print GRAPH "-";	# Print a "-"
+	      }
+	      print GRAPH "\n"; # Print a new line, indicating the end of this sequence entry
+	    }
+	  }
+	  
+	  ## Empty the old query arrays
+	  undef @hits;	  # Empty the hits array (so it can be reused)
+	  undef @evals;	  # Empty the e-value array
+	  undef @scores;	  # Empty the score array
+	  
+	  ## Start a new query
+	  ($hitQuery,$hitProfile,$hitFrom,$hitTo,$hitScore,$hitE) = split('\t',@fullHits[$i]);   # Split each entry in list into stat variables
+	  push(@hits,"$hitFrom\t$hitTo\t$hitProfile\t$hitScore\t$hitE"); # Add the information on this hit to the list of hits
+	  push(@evals,$hitE); # Add the e-value of this hit to the list of e-values
+	  push(@scores,$hitScore); # Add the score of this hit to the list of scores
+	  $lastQuery = $hitQuery;	# Set the last query to the current query
+	} else {			# Add this to the list of current hits
+	  ($hitQuery,$hitProfile,$hitFrom,$hitTo,$hitScore,$hitE) = split('\t',@fullHits[$i]);   # Split each entry in list into stat variables
+	  push(@hits,"$hitFrom\t$hitTo\t$hitProfile\t$hitScore\t$hitE"); # Add the information on this hit to the list of hits
+	  push(@evals,$hitE); # Add the e-value of this hit to the list of e-values
+	  push(@scores,$hitScore); # Add the score of this hit to the list of scores
+	  $lastQuery = $hitQuery;	# Set the last query to the current query
+	  #if ($lastQuery eq "AB239593_Alburnus_alburnus") {
+	  #  print "$length\t$hitFrom\t$hitTo\t$hitProfile\t$hitScore\t$hitE\n";
+	  #}
+	}
+      }
+      
+    }
+    $setI++;  # Add one to the profile set indicator
+  }
+}
+
+## Close output files
+if ($out_table == 1) {   # If table output is on, close the table file
+  close (TABLE);
+}
+if ($out_graph == 1) {   # If graphical output is on, close the graph file
+  close (GRAPH);
+}
+if ($out_not == 1) {   # If not-found output is on, close the not-found file
+  close (NOTFOUND);
+  $profileCount = scalar(@profileSet);   # Count the number of profile sets
+  if ($complement == 1) {   # If complementary strand was scanned
+    $profileCount = $profileCount * 2;   # Double the number of profile sets that was investigated (and thus the number of not-founds that could at max be found)
+  }
+
+
+  @sortedNotfoundList = sort(@notfoundList);  # Sort the not-found list
+  %notfoundHash = ();  # Initialize not-found hash
+  foreach $entry (@sortedNotfoundList) {  # For each entry in the not-found list
+    $notfoundHash{$entry} = $notfoundHash{$entry} + 1;  # Add one to the corresponding entry in the hash for each time a query ID is encountered in the not-found list
+  }
+
+  open (NOTFOUND, ">$output\_not_found.txt");  # Write to the not-found file
+  foreach $query (@inputQueries) {  # Go through all input queries
+    if (exists($notfoundHash{$query})) {  # If the query ID exists in the not-found hash
+      if ($notfoundHash{$query} >= $profileCount) {  # If the query never is significantly found for any profile set
+	print NOTFOUND "$query\n";  # Write the query ID to the not-found file
+      }
+    }
+  }
+  close (NOTFOUND);  # Close the not-found file
+
+}
+
+
+## Create total collected output and FASTA output
+
+open (RESULTS, ">$output.extraction.results");   # Create a results file
+open (RAWOUT, ">$tempDir/metaxa_output.raw");   # Create a raw output file for ALL data
+if ($out_fasta == 1) {   # If FASTA output should be written
+  open (FASTA, ">$output.extraction.fasta");   # Create a FASTA output file for found sequences
+  if ($allow_reorder == 0) {   # If reordering of domains is not allowed
+    open (CHIMERA, ">$output.chimeric.fasta");   # Create a FASTA file for potential chimera sequences with profile matches in the wrong order
+  }
+}
+
+undef @sortedHits;   # Empty the array of sorted hits
+
+if ($mode ne "m") {
+  undef %fragmentsWithHits;
+  undef @tempHits;   # Empty the array of temporary hits
+  
+  foreach $fullHit (@allHits) {
+    ($inputQuery) = split('\t',$fullHit);
+    $fragmentName = $inputQuery;
+    $fragmentName =~ s/:[0-9]*-[0-9]*//;
+    $fragmentsWithHits{$fragmentName} = 1;
+  }
+
+  foreach $fullHit (@allHits) {  
+    ($query) = split('\t',$fullHit);
+    if (($mode eq "a") && ($query =~ m/_COMPLETE/)) {
+      push(@tempHits, $fullHit); # Add this information to the collection of all hits for this sequence, across all profile sets
+    } else {
+      ($frgQuery,$frgT) = split('_FRAGMENT_',$query);
+      $frgT =~ s/:.*//;
+      $frgPP = $frgT - 2;
+      $frgP = $frgT - 1;
+      $frgN = $frgT + 1;
+      $frgNN = $frgT + 2;
+      
+      if ((defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgP"})) && (defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgN"}))) {  # If detected before AND after
+	push(@tempHits, $fullHit); # Add this information to the collection of all hits for this sequence, across all profile sets
+      }
+      if ((not(defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgP"}))) && (not(defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgN"})))) {  # If ONLY detected on this, not before or after
+	push(@tempHits, $fullHit); # Add this information to the collection of all hits for this sequence, across all profile sets
+      }
+      if ((defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgP"})) && (not(defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgN"})))) {  # If detected before but NOT after
+	if (not(defined($fragmentsWithHits{"$frgQuery\_FRAGMENT_$frgPP"}))) {
+	  push(@tempHits, $fullHit); # Add this information to the collection of all hits for this sequence, across all profile sets
+	}
+      }
+    }
+  }
+  @sortedHits = sort @tempHits;   # Sort the full list of hits in alphabetical order (to be able to analyse all sequences withe same ID at once)
+} else {
+  @sortedHits = sort @allHits;   # Sort the full list of hits in alphabetical order (to be able to analyse all sequences withe same ID at once)
+}
+
+## Set all counts for different rRNA types to zero
+$ssuA = 0;
+$ssuB = 0;
+$ssuC = 0;
+$ssuE = 0;
+$ssuM = 0;
+$ssuO = 0;
+$ssuChimeric = 0;
+$ssuMain = 0;
+$ssuCompl = 0;
+
+push(@sortedHits,"--END--");   # Add a last item to the sorted list, so that all items are securely saved
+$lc = 1;   # Set the line count to one
+foreach $line (@sortedHits) {   # Go through the list of found hits
+  print RAWOUT "$line\n";   # Write the raw data associated with this hit to the raw data output file
+  @item = split('\t',$line);   # Split the line into an array
+  ## If this sequence ID is the same as the saved ones, then add it, else empty the array sequence ID and save
+  if ((@seqID[0] ne @item[0]) && (@item[0] ne "") || ($lc > scalar(@sortedHits))) {   # If this sequence ID is not the same as the last one and is non-empty, or if the end of the list has been reached
+    ## Save profile-type which is most likely...
+    if ($priority eq "sum") {   # If the sum-of-scores algorithm should be used to determine the most likely profile-type
+      ## Reset variables to unrealisticly high or low values
+      $best = 0;
+      $bestCount = 0;
+      $bestEval = 1000;
+      $bestScore = -1000;
+      $bestSum = -1000;
+
+      for ($i = 0; $i < scalar(@seqScoreSum); $i++) {   # Go through all sum-of-scores entries
+	if (@seqScoreSum[$i] > $bestSum) {   # If the current value is larger than the previous top value
+	  $best = $i;   # Set the best value to be the current value
+	  ## Set all other best variables to those corresponding to the current value
+	  $bestCount = @seqDomCounts[$i];
+	  $bestEval = @seqAvgE[$i];
+	  $bestScore = @seqAvgScore[$i];
+	  $bestSum = @seqScoreSum[$i];
+	}
+	if (@seqScoreSum[$i] == $bestSum) {   # If the current value is equal to the previous top value
+	  if (@seqDomCounts[$i] > $bestCount) {   # If the current domain count is larger than the previous top domain count
+	    $best = $i;   # Set the best value to be the current value
+	    ## Set all other best variables to those corresponding to the current value
+	    $bestCount = @seqDomCounts[$i];
+	    $bestEval = @seqAvgE[$i];
+	    $bestScore = @seqAvgScore[$i];
+	    $bestSum = @seqScoreSum[$i];
+	  }
+	  if (@seqDomCounts[$i] == $bestCount) {   # If the current domain count is equal to the previous top domain count
+	    if (@seqAvgE[$i] < $bestEval) {   # If the current E-value is smaller than the previous top E-value
+	      $best = $i;   # Set the best value to be the current value
+	      ## Set all other best variables to those corresponding to the current value
+	      $bestCount = @seqDomCounts[$i];
+	      $bestEval = @seqAvgE[$i];
+	      $bestScore = @seqAvgScore[$i];
+	      $bestSum = @seqScoreSum[$i];
+	    }
+	  }
+	}
+      }
+    }
+    if ($priority eq "domains") {   # If the number of found domains should be used to determine the most likely profile-type
+      ## Reset variables to unrealisticly high or low values
+      $best = 0;
+      $bestCount = 0;
+      $bestEval = 1000;
+      $bestScore = -1000;
+
+      for ($i = 0; $i < scalar(@seqDomCounts); $i++) {   # Go through all domain count entries
+	if (@seqDomCounts[$i] > $bestCount) {   # If the current domain count is larger than the previous top domain count
+	  $best = $i;   # Set the best value to be the current value
+	  ## Set all other best variables to those corresponding to the current value
+	  $bestCount = @seqDomCounts[$i];
+	  $bestEval = @seqAvgE[$i];
+	  $bestScore = @seqAvgScore[$i];
+	}
+	if (@seqDomCounts[$i] == $bestCount) {   # If the current domain count is equal to the previous top domain count
+	  if (@seqAvgE[$i] < $bestEval) {   # If the current E-value is smaller than the previous top E-value
+	    $best = $i;   # Set the best value to be the current value
+	    ## Set all other best variables to those corresponding to the current value
+	    $bestCount = @seqDomCounts[$i];
+	    $bestEval = @seqAvgE[$i];
+	    $bestScore = @seqAvgScore[$i];
+	  }
+	  if (@seqAvgE[$i] == $bestEval) {   # If the current E-value is equal to the previous top E-value
+	    if (@seqAvgScore[$i] > $bestScore) {   # If the current average score is larger than the previous top average score
+	      $best = $i;   # Set the best value to be the current value
+	      ## Set all other best variables to those corresponding to the current value
+	      $bestCount = @seqDomCounts[$i];
+	      $bestEval = @seqAvgE[$i];
+	      $bestScore = @seqAvgScore[$i];
+	    }
+	  }
+	}
+      }
+    }
+    if ($priority eq "eval") {   # If the average E-value should be used to determine the most likely profile-type
+      ## Reset variables to unrealisticly high or low values
+      $best = 0;
+      $bestCount = 0;
+      $bestEval = 1000;
+      $bestScore = -1000;
+
+      for ($i = 0; $i < scalar(@seqDomCounts); $i++) {   # Go through all domain counts entries
+	if (@seqAvgE[$i] < $bestEval) {   # If the current E-value is smaller than the previous top E-value
+	  $best = $i;   # Set the best value to be the current value
+	  ## Set all other best variables to those corresponding to the current value
+	  $bestCount = @seqDomCounts[$i];
+	  $bestEval = @seqAvgE[$i];
+	  $bestScore = @seqAvgScore[$i];
+	}
+	if (@seqAvgE[$i] == $bestEval) {   # If the current E-value is equal to the previous top E-value
+	  if (@seqAvgScore[$i] > $bestScore) {   # If the current average score is larger than the previous top average score
+	    $best = $i;   # Set the best value to be the current value
+	    ## Set all other best variables to those corresponding to the current value
+	    $bestCount = @seqDomCounts[$i];
+	    $bestEval = @seqAvgE[$i];
+	    $bestScore = @seqAvgScore[$i];
+	  }
+	  if (@seqAvgScore[$i] == $bestScore) {   # If the current average score is equal to the previous top average score
+	    if (@seqDomCounts[$i] > $bestCount) {   # If the current number of domains is larger than the previous top number of domains
+	      $best = $i;   # Set the best value to be the current value
+	      ## Set all other best variables to those corresponding to the current value
+	      $bestCount = @seqDomCounts[$i];
+	      $bestEval = @seqAvgE[$i];
+	      $bestScore = @seqAvgScore[$i];
+	    }
+	  }
+	}
+      }
+    }
+    if ($priority eq "score") {   # If the average score should be used to determine the most likely profile-type
+      ## Reset variables to unrealisticly high or low values
+      $best = 0;
+      $bestCount = 0;
+      $bestEval = 1000;
+      $bestScore = -1000;
+
+      for ($i = 0; $i < scalar(@seqDomCounts); $i++) {   # Go through all domain counts entries
+	if (@seqAvgScore[$i] > $bestScore) {   # If the current average score is larger than the previous top average score
+	  $best = $i;   # Set the best value to be the current value
+	  ## Set all other best variables to those corresponding to the current value
+	  $bestCount = @seqDomCounts[$i];
+	  $bestEval = @seqAvgE[$i];
+	  $bestScore = @seqAvgScore[$i];
+	}
+	if (@seqAvgScore[$i] == $bestScore) {   # If the current average score is equal to the previous top average score
+	  if (@seqAvgE[$i] < $bestEval) {   # If the current E-value is smaller than the previous top E-value
+	    $best = $i;   # Set the best value to be the current value
+	    ## Set all other best variables to those corresponding to the current value
+	    $bestCount = @seqDomCounts[$i];
+	    $bestEval = @seqAvgE[$i];
+	    $bestScore = @seqAvgScore[$i];
+	  }
+	  if (@seqAvgE[$i] == $bestEval) {   # If the current E-value is equal to the previous top E-value
+	    if (@seqDomCounts[$i] > $bestCount) {   # If the current number of domains is larger than the previous top number of domains
+	      $best = $i;   # Set the best value to be the current value
+	      ## Set all other best variables to those corresponding to the current value
+	      $bestCount = @seqDomCounts[$i];
+	      $bestEval = @seqAvgE[$i];
+	      $bestScore = @seqAvgScore[$i];
+	    }
+	  }
+	}
+      }
+    }
+    
+    if (@seqID[$best] ne "") {   # If the sequence ID of the most likely profile is not empty
+      $chimeric = 0;   # Assume the sequence is not chimeric
+      if ($allow_reorder == 0) {   # If re-order of domain is not allowed
+	$domain_order = @allSeqDomains[$best];   # Gather the order the domains are found in
+	@domain_order = split(' ',$domain_order);   # Split the list into an array
+	@sorted_domain_order = sort {$a cmp $b} @domain_order;   # Sort the array alphabetically
+	for ($di = 0; $di <= scalar(@domain_order); $di++) {   # Go through the sorted array
+	  if (@domain_order[$di] ne @sorted_domain_order[$di]) {    # Check if the order of the arrays differ at any poiny
+	    $chimeric = 1;   # If they do differ, mark the sequence as chimeric
+	  }
+	}
+      }
+
+      $seqDNALength = length(@seqDNA[$best]);   # Get the length of the DNA sequence
+
+      ## Print sequence and match data...
+      ## Order of columns in the output file:
+      ## ID Length Type Main/Compl Domains Avg.Eval Avg.Score Start End Start_domain End_domain Chimeric
+      $showStart = $profileNames{"@startDomain[$best]"};  # Get the show-name the start profile
+      $showEnd = $profileNames{"@endDomain[$best]"};  # Get the show-name the end profile
+      print RESULTS @seqID[$best] . "\t" . $seqDNALength . "\t" . @seqRNAType[$best] . "\t" . @seqCompl[$best] . "\t" . @seqDomCounts[$best] . "\t" . @seqAvgE[$best] . "\t" . @seqAvgScore[$best] . "\t" . @seqScoreSum[$best] . "\t" . @dnaStart[$best] . "\t" . @dnaEnd[$best] . "\t" . $showStart . "\t" . $showEnd . "\t";   # Print sequence and match data to the results file
+      if ($chimeric == 1) {   # If the sequence was regarded chimeric
+	print RESULTS "Chimeric\t";   # Add a chimeric tag to the entry
+      } else {   # If not chimeric
+	print RESULTS "\t";   # Add an empty column
+      }
+      $allDomains = @allSeqDomains[$best];   # Get the domain order of the entry
+      $allDomains =~ tr/ /,/;   # Replace spaces with commas in the domain order string
+      $allDomains = substr($allDomains,0,length($allDomains) - 1);   # Remove the last character (a comma)
+      print RESULTS $allDomains;   # Write the domain order to the results file
+      print RESULTS "\t";   # Write a tab to the results file
+      
+      ## Set extended type string (the string going into the definition line of the FASTA file)
+      $geneType = uc($gene);
+      if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+	$geneType = $genetype . " rRNA";
+      }
+      if (@seqRNAType[$best] eq "A") {   # If sequence is most likely archaeal
+	$extendedType = "Predicted Archaeal $geneType";
+	$ssuA++;   # Add one archaeal rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "B") {   # If sequence is most likely bacterial
+	$extendedType = "Predicted Bacterial $geneType";
+	$ssuB++;   # Add one bacterial rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "E") {   # If sequence is most likely eukaryote
+	$extendedType = "Predicted Eukaryotic $geneType";
+	$ssuE++;   # Add one eukaryote rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "C") {   # If sequence is most likely chloroplastic
+	$extendedType = "Predicted Chloroplast $geneType";
+	$ssuC++;   # Add one chloroplast rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "M") {   # If sequence is most likely mitochondrial 16S
+	$extendedType = "Predicted Mitochondrial $geneType";
+	$ssuM++;   # Add one mitochondrial rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "N") {   # If sequence is most likely mitochondrial 12S
+	$extendedType = "Predicted Mitochondrial $geneType";
+	$ssuM++;   # Add one mitochondrial rRNA to the counter
+      }
+      if (@seqRNAType[$best] eq "O") {   # If sequence is most likely of other origin
+	$extendedType = "Predicted $geneType";
+	$ssuO++;   # Add one other rRNA to the counter
+      }
+
+      if (@seqCompl[$best] == 1) {   # If domains were found on complementary strand
+	$extendedStrand = "complementary strand";   # Set the strand string to complementary
+	$ssuCompl++;   # Add one to the complementary strand counter
+      } else {   # If domains were found on the main strand
+	$extendedStrand = "main strand";   # Set the strand string to main
+	$ssuMain++;   # Add one to the main strand counter
+      }
+      
+      ## Print (extracted) rRNA sequence...
+      if ($out_fasta == 1) {   # If FASTA-output is on
+	if ($truncate == 0) {   # If the whole sequence should be kept in output file
+	  if ($chimeric == 0) {   # If the sequence is not chimeric
+	    $showStart = $profileNames{"@startDomain[$best]"};  # Get the show-name the start profile
+	    $showEnd = $profileNames{"@endDomain[$best]"};  # Get the show-name the end profile
+	    print FASTA ">" . @seqID[$best] . "|" . @seqRNAType[$best] ." " . $extendedType . " (" . $seqDNALength . " bp) From domain " . $showStart . " to " . $showEnd . " on " . $extendedStrand . "\n";   # Write FASTA definition line
+	    print FASTA  @seqDNA[$best] . "\n";   # Write DNA sequence
+	  } else {   # If sequence is regarded chimeric
+	    $ssuChimeric++;   # Add one to the chimeric counter
+	    $showStart = $profileNames{"@startDomain[$best]"};  # Get the show-name the start profile
+	    $showEnd = $profileNames{"@endDomain[$best]"};  # Get the show-name the end profile
+	    print CHIMERA ">" . @seqID[$best] . "|" . @seqRNAType[$best] ." Chimeric " . $extendedType . " (" . $seqDNALength . " bp) From domain " . $showStart . " to " . $showEnd . " on " . $extendedStrand . "\n";   # Write FASTA definition line
+	    print CHIMERA  @seqDNA[$best] . "\n";   # Write DNA sequence
+	  }
+	} else {    # If only the rRNA part of the sequence should be saved to output file
+	  $fastaStartPoint = @dnaStart[$best] - 1000;   # Start extraction 1000 bp before the first domain
+	  $fastaEndPoint = @dnaEnd[$best] + 1000;   # End extraction 1000 bp after the last domain
+
+	  if (@seqDomCounts[$best] > 1) {   # If more than one domain was found
+	    if ($profileTags{"@startDomain[$best]"} eq "start")  {   # If the first domain was a start domain
+	      $fastaStartPoint = @dnaStart[$best] - 1;   # Set the start point of the extraction to the start of the domain
+	    }
+	    if ($profileTags{"@startDomain[$best]"} eq "end")  {   # If the first domain was an end domain
+	      $fastaStartPoint = @dnaStart[$best] - 1;   # Set the start point of the extraction to the start of the domain
+	    }
+	    if ($profileTags{"@endDomain[$best]"} eq "start")  {   # If the last domain was a start domain
+	      $fastaEndPoint = @dnaEnd[$best];   # Set the end point of the extraction to the end of the domain
+	    }
+	    if ($profileTags{"@endDomain[$best]"} eq "end")  {   # If the last domain was an end domain
+	      $fastaEndPoint = @dnaEnd[$best];   # Set the end point of the extraction to the end of the domain
+	    }
+	  }
+	  
+	  if ($fastaStartPoint < 0) {   # If the start point is smaller than zero, set the start point to zero
+	    $fastaStartPoint = 0;
+	  }
+	  if ($fastaEndPoint > length(@seqDNA[$best])) {   # If the end point is larger than the length of the sequence, set the end point to the sequence end
+	    $fastaEndPoint = length(@seqDNA[$best]);
+	  }
+	  $fastaLength = $fastaEndPoint - $fastaStartPoint;   # Calculate the length of the extracted region
+
+	  if ($chimeric == 0) {   # If the sequence is not chimeric
+	    $showStart = $profileNames{"@startDomain[$best]"};  # Get the show-name the start profile
+	    $showEnd = $profileNames{"@endDomain[$best]"};  # Get the show-name the end profile
+	    print FASTA ">" . @seqID[$best] . "|" . @seqRNAType[$best] . " " . $extendedType . " (" . $fastaLength . " bp) From domain " . $showStart . " to " . $showEnd . " on " . $extendedStrand . "\n";   # Write FASTA definition line
+	    print FASTA substr(@seqDNA[$best],$fastaStartPoint,$fastaLength) . "\n";   # Write DNA sequence
+	  } else {   # If sequence is regarded chimeric
+	    $ssuChimeric++;   # Add one to the chimeric counter
+	    $showStart = $profileNames{"@startDomain[$best]"};  # Get the show-name the start profile
+	    $showEnd = $profileNames{"@endDomain[$best]"};  # Get the show-name the end profile
+	    print CHIMERA ">" . @seqID[$best] . "|" . @seqRNAType[$best] . " Chimeric " . $extendedType . " (" . $fastaLength . " bp) From domain " . $showStart . " to " . $showEnd . " on " . $extendedStrand . "\n";   # Write FASTA definition line
+	    print CHIMERA substr(@seqDNA[$best],$fastaStartPoint,$fastaLength) . "\n";   # Write DNA sequence
+	  }
+	}
+      }
+
+      ## Print info on all matches, also not top ones to the results file...
+      for ($i = 0; $i < scalar(@seqRNAType); $i++) {   # Go through all the possible rRNA types...
+	print RESULTS @seqRNAType[$i] . ": " . @seqDomCounts[$i] . " " . @seqAvgE[$i] . " " . @seqAvgScore[$i];   # Write some info on this type (Type, Domain count, Average E-value, Average score)
+	if ($i < scalar(@seqRNAType) - 1) {   # If this is no the last domain type
+	  print RESULTS ", ";   # Write a comma
+	}
+      }
+      print RESULTS "\n";   # Write end of line
+    }
+    
+    ## Undefine all used arrays for the next round...
+    undef @seqID;
+    undef @seqRNAType;
+    undef @seqCompl;
+    undef @seqDomCounts;
+    undef @seqAvgE;
+    undef @seqAvgScore;
+    undef @seqScoreSum;
+    undef @seqDNA;
+    undef @allSeqDomains;
+    undef @dnaStart;
+    undef @dnaEnd;
+    undef @startDomain;
+    undef @endDomain;
+    undef @domain_order;
+    undef @sorted_domain_order;
+  }
+  if (@item[0] ne "") {   # Add this entry to the set (regardless if the entry has the same ID as entries already in the set), as long as it is non-empty
+    push(@seqID, @item[0]);   # Add sequence ID
+    push(@seqRNAType, @item[1]);   # Add rRNA type
+    push(@seqCompl, @item[2]);   # Add main/complementary strand info
+    push(@seqDomCounts, @item[3]);   # Add domain count
+    push(@seqAvgE, @item[4]);   # Add average E-value
+    push(@seqAvgScore, @item[5]);   # Add average score
+    push(@seqScoreSum, @item[6]);   # Add sum-of-scores
+    push(@seqDNA, @item[7]);   # Add DNA sequence
+    
+    ## Determine first and last domains, and their positions
+    ## Set variables to unrealistic values
+    $dnaEnd = 0;
+    $startDomain = "***";
+    $endDomain = "***";
+    $dnaStart = length(@item[7]);
+    $allDomains = "";
+    
+    for ($i = 8; $i < scalar(@item); $i++) {   # Go through the list of found domains in this sequence
+      ($hitStart,$hitEnd,$hitProfile,$hitScore,$hitEval) = split(';',@item[$i]);   # Separate the hit stats into variables
+      $allDomains = $allDomains . $hitProfile . " ";   # Add found domain to the list of all domains
+
+      if ($hitStart < $dnaStart) {   # If this domain is the first one so far
+	$dnaStart = $hitStart;   # Set the start of the rRNA sequence to this domain's start
+	$startDomain = $hitProfile;   # Set this domain as the starting domain
+      }
+      if ($hitEnd > $dnaEnd) {   # If this domain is the last one so far
+	$dnaEnd = $hitEnd;   # Set the end of the rRNA sequence to this domain's end
+	$endDomain = $hitProfile;   # Set this domain as the ending domain
+      }
+    }
+    push(@allSeqDomains,$allDomains);   # Add list of all domains
+    push(@dnaStart, $dnaStart);   # Add start of the rRNA sequence
+    push(@startDomain, $startDomain);   # Add start domain
+    push(@dnaEnd, $dnaEnd);   # Add end of rRNA sequence
+    push(@endDomain, $endDomain);   # Add end domain
+  }
+  $lc++;   # Increase the line count by one
+}
+
+## Save results to the summary file
+if ($out_sum == 1) {   # If summary file should be written
+  $geneType = uc($gene);
+  if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+    $geneType = $geneType . " rRNA";
+  }
+  $ssuTotal = $ssuA + $ssuB + $ssuC + $ssuE + $ssuM + $ssuO;   # Add rRNAs from all different origins
+  ## Write info on the found rRNA sequences to the summary file
+  print SUMMARY "Sequences detected as $geneType by MetaxaQR:\t$ssuTotal\n";
+  print SUMMARY "  On main strand:         \t$ssuMain\n";
+  print SUMMARY "  On complementary strand:\t$ssuCompl\n";
+  if ($allow_reorder == 0) {   # If re-ordering of domains is not allowed
+    print SUMMARY "Sequences detected as chimeric by MetaxaQR:\t$ssuChimeric\n";   # Write the number of reported chimeric sequences to the summary file
+  }
+  ## Write info on the found rRNA sequence types to the summary file
+  print SUMMARY "$geneType sequences by preliminary origin:\n";
+  print SUMMARY "  Archaea:     \t$ssuA\n";
+  print SUMMARY "  Bacteria:    \t$ssuB\n";
+  print SUMMARY "  Eukaryota:   \t$ssuE\n";
+  print SUMMARY "  Chloroplast: \t$ssuC\n";
+  print SUMMARY "  Mitochondria:\t$ssuM\n";
+  print SUMMARY "  Other:       \t$ssuO\n";
+  print SUMMARY "-----------------------------------------------------------------\n";
+  close (SUMMARY);   # Close the summary file
+}
+
+close (RESULTS);   # Close the results file
+close (RAWOUT);   # Close the raw output file
+if ($out_fasta == 1) {   # If FASTA output is on
+  close (FASTA);   # Close the FASTA output file
+  if ($allow_reorder == 0) {   # If re-ordering of domains is not allowed
+    close (CHIMERA);   # Close the chimera file
+  }
+}
+
+## Clean up and finish
+
+if ($pipeline == 0) {   # If metaxaQR_x is not called from the pipeline mode (i.e. from metaxaQR)
+  if ($save_raw == 1) {   # If raw data should be saved
+    `mv $tempDir $output\_metaxa_raw_output`;   # Change the name of the temporary directory to ..._metaxa_raw_output
+  } else {   # Else, discard the raw data
+    `rm -rf $tempDir`;   # Remove the temporary directory
+  }
+}
+
+## Get the current time and output a finished message
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Extraction finished!\n";
+}
+
+## Write end time a summary file
+if ($pipeline == 0) {    # If not running in pipeline mode
+  if ($out_sum == 1) {   # If summary output is on
+    open (SUMMARY, ">>$output.summary.txt");   # Append to the summary file
+    print SUMMARY "metaxaQR_x run finished at $now.\n";   # Write ending time for the analysis
+    close (SUMMARY);   # Close summary file
+  }
+}
+
+
+sub hmmerSearch {
+  $hmmerCommand = $_[0];
+  $outputFile = $_[1];
+  $strand = $_[2];
+  open (HMMEROUTPUT, ">$outputFile");
+  open (HMMER, "$hmmerCommand |");
+  $totalHitCount = 0;
+  $hitCount = 0;
+  $maxCount = 0;
+  while (chomp($line = <HMMER>)) {
+    if (substr($line,0,6) eq "Query:") {
+      $hitCount = 0;
+      
+      $profile = substr($line,7);
+      $profileLength = $profile;
+      $profileLength =~ s/.*  *//;
+      $profileLength =~ s/[^0-9]//g;
+      $profile =~ s/  *//;
+      $profile =~ s/  *.*//;
+      $profile =~ s/-[0-9]*//;
+      
+      print HMMEROUTPUT "## New query:\t$profile\t$profileLength\n";
+
+    }
+    if (substr($line,0,12) eq "Description:") {
+      $desc = $line;
+    }
+    if (substr($line,0,3) eq ">> ") {
+      ($tempshit,$hmmerSubjectName) = split(' ',$line);
+    }
+    if ($line =~ m/[0-9] ! /) {
+      $stats = $line;
+      $stats =~ s/  */\t/g;
+      $hitCount++;
+      $totalHitCount++;
+      if ($maxCount == 0) {
+	print HMMEROUTPUT "$hmmerSubjectName\t$profile\t$profileLength$stats\n";
+      } else {
+	if ($hitCount <= $maxCount) {
+	  print HMMEROUTPUT "$hmmerSubjectName\t$profile\t$profileLength$stats\n";
+	}
+      }
+    }
+    if (substr($line,0,2) eq "//") {
+      print HMMEROUTPUT "//\n";
+    }
+  }
+  close(HMMEROUTPUT);
+}
+
+## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
+## johan.bengtsson [at] microbiology.se
+## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
+## //Johan Bengtsson-Palme, December 2010 - March 2021
