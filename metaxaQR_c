@@ -211,10 +211,6 @@ for ($i = 0; $i <= scalar(@ARGV); $i++) { # Goes through the list of arguments
     $i++;
     $W = @ARGV[$i];
   }
-  if ($arg eq "--search_wordsize") { # Set the word size for the search using the --search_wordsize flag
-    $i++;
-    $W = @ARGV[$i];
-  }
   if ($arg eq "--cpu") { # Set the number of CPUs to use based on the --cpu flag
     $i++;
     $cpu = @ARGV[$i];
