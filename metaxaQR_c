@@ -647,11 +647,14 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     chomp($line);
     ($label, $seqID, $taxonomy) = split('\t', $line);
     $seqID =~ s/>//;
-    if ($label =~ m/MQR_100_/) {  ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+    if ($label =~ m/MQR_.*_100_[0-9]/) {  ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
       $labels{$seqID} = $label;
     }
     $taxdata{$label} = $taxonomy;
   }
+  $mqr_genetype = $label;
+  $mqr_genetype =~ s/MQR_//;
+  $mqr_genetype =~ s/_100.*//;
   close REPR;
   
   ## Set up output files
@@ -806,7 +809,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	$split_tree = "Unknown";
       } else {
 	$split_tree = $mqr_tree;
-	$split_at = "MQR_$mqr_id_level";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+	$split_at = "MQR_$mqr_genetype\_$mqr_id_level";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
 	$split_tree =~ s/.*$split_at/$split_at/;
 	$split_tree =~ s/ .*//;
 	$mqr_tax = $taxdata{$split_tree};
