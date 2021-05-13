@@ -816,8 +816,22 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
       }
     }
     $rID = $identity / 100;
-    $rLen = $length;
-    $rScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rLen ** ($rID ** 1.1) ) ) ) ) );
+    $rMLen = $length; # Get the match length
+    $rQLen = length($sequences{$query}); # Load the length of the query DNA sequence
+    $rDLen = $rQLen - $rMLen; # Calculate the non-matched length of the sequence
+#    $rMScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rMLen ** ($rID ** 1.1) ) ) ) ) );
+#    $rDScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rDLen ** ($rID ** 1.1) ) ) ) ) );
+    $rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rMLen));
+    if ($rDLen > 0) {
+      $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rDLen));
+    } else {
+      $rDScore = 0;
+    }
+
+    $rScore = $rMScore - $rDScore ** 2;
+    if ($rScore < 0) {
+      $rScore = 0;
+    }
     $confidence = $rScore * 100;
     
     print OUTMQR $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $split_tree . "\t" . $mqr_tax . "\t" . $rScore . "\n";
