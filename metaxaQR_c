@@ -836,7 +836,31 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     
     print OUTMQR $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $split_tree . "\t" . $mqr_tax . "\t" . $rScore . "\n";
 
-    print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+    if ($confidence < $C) {
+      if ($confidence >= 50) {
+	$mqr_id_levelB = findIDLevel($confidence);
+	if ($mqr_id_levelB == 100) {
+	  $mqr_taxB = $taxdata{$mqr_label};
+	  $split_treeB = $mqr_labelB;
+	} else {
+	  if ($mqr_id_levelB == 0) {
+	    $mqr_taxB = "Unknown";
+	    $split_treeB = "Unknown";
+	  } else {
+	    $split_treeB = $mqr_tree;
+	    $split_atB = "MQR_$mqr_genetype\_$mqr_id_levelB";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+	    $split_treeB =~ s/.*$split_atB/$split_atB/;
+	    $split_treeB =~ s/ .*//;
+	    $mqr_taxB = $taxdata{$split_treeB};
+	  }
+	}
+	print TAXONOMY $writeQuery . "\t" . $mqr_taxB . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+      } else {
+	print TAXONOMY $writeQuery . "\t" . "Unknown" . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+      }
+    } else {
+      print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+    }
 	  
     $agreement = $mqr_tax;
     if ($agreement eq "Mismatch") {
