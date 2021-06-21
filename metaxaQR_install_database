@@ -1,0 +1,170 @@
+#!/usr/bin/perl
+# Metaxa 3.0 d1
+$app_title     = "MetaxaQR -- Database installer";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 d1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"   MetaxaQR -- Database installer\
+    Copyright (C) 2016-2021 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## OPTIONS:
+
+$usage = "\
+-g {string} : Specify the name of the database to install (usually a gene name)\
+              If not specified, the program will show a list of available database options\
+-v {string} : Specify the name of the version of the database to install\
+
+-d {directory} : The directory where to install the database. Default is in the metaxaQR_db directory in the same directory as MetaxaQR itself\
+-r {http-address} : The repository to download the files from. Default is http://microbiology.se/sw/metaxaQR_dbs\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/metaxaQR_install_database$//;
+$db_dir = $bindir . "metaxaQR_db/";
+$gene = "";
+$rep = "http://microbiology.se/sw/metaxaQR_dbs";
+$version = "";
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if (($arg eq "-g") || ($arg eq "--gene")) {   # Read gene from -g (or --gene) flag
+    $i++;
+    $gene = @ARGV[$i];
+  }
+  if (($arg eq "-v") || ($arg eq "--version")) {   # Read gene from -v (or --version) flag
+    $i++;
+    $version = @ARGV[$i];
+  }
+  if ($arg eq "-d") {   # Read database directory from -d flag
+    $i++;
+    $db_dir = @ARGV[$i];
+  }
+  if (($arg eq "-r") || ($arg eq "--repository")) {   # Read repository from -r (or --repository) flag
+    $i++;
+    $rep = @ARGV[$i];
+  }
+
+  ## If "-h" is among the options, output short usage data and options
+  if ($arg eq "-h") {
+    print "Usage: metaxaQR_install_database -g <gene name>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--help" is among the options, output usage data and all options
+  if ($arg eq "--help") {
+    print "Usage: metaxaQR_install_database -g <gene name>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit Metaxa
+  }
+
+  if ($arg eq "--debug") {   # Run Metaxa in debug mode
+    $debug = 1;
+  }
+}
+
+if ($gene eq "") {
+  @dblist = `curl -H "Cache-Control: no-cache" -s $rep/dbs.txt`;
+  print STDOUT "Gene/Database name  \tDescription (reference, build options and website)\n";
+  print STDOUT "==========================================================================\n";
+  foreach $line (@dblist) {
+    if ($line =~ m/[<>]/) {
+      print STDOUT "ERROR! The repository $rep does not seem to be a valid repository.\n";      
+      exit;
+    }
+    ($name, $dbversion, $desc, $filename, $reference, $build_options, $website) = split('\t', $line);
+    $spaces = "                    ";
+    $spaces = substr($spaces, length($name) - 1);
+    print STDOUT $name . $spaces . "\t" . $desc . "\n";
+    if ($reference ne "") {
+      print STDOUT "                    ";
+      print STDOUT "\t  " . $reference . "\n";
+    }
+    if ($build_options ne "") {
+      print STDOUT "                    ";
+      print STDOUT "\t  Build options: " . $build_options . "\n";
+    }
+    if ($website ne "") {
+      print STDOUT "                    ";
+      print STDOUT "\t  " . $website . "\n";
+    }
+  }
+} else {
+  print STDOUT "Fetching available databases...\n";
+  @dblist = `curl -H "Cache-Control: no-cache" -s $rep/dbs.txt`;
+  $getfile = "";
+  foreach $line (@dblist) {
+    if ($line =~ m/[<>]/) {
+      print STDOUT "ERROR! The repository $rep does not seem to be a valid repository.\n";      
+      exit;
+    }
+    ($name, $dbversion, $desc, $filename, $reference, $build_options, $website) = split('\t', $line);
+    if ($gene eq $name) {
+      if ($version eq "") {
+	$getfile = $filename;
+	$dbname = $name;
+      } else {
+	if ($version eq $dbversion) {
+	  $getfile = $filename;
+	  $dbname = $name;
+	}
+      }
+    } 
+  }
+  if ($getfile eq "") {
+    print STDOUT "ERROR! The database repesenting $gene (version: $version) does not seem to exist in repository $rep\n";      
+    exit;
+  }
+  print STDOUT "Downloading $dbname database...\n";
+  `curl -H "Cache-Control: no-cache" -O $rep/$getfile`;
+  $line = `head -10 $getfile`;
+  if ($line =~ m/<!DOCTYPE/) {
+    print STDOUT "ERROR! The database repesenting $dbname (version: $version) does not seem to exist in repository $rep\nThis is likely a database error and should be reported to the MetaxaQR team.\n";      
+    `rm $getfile`;
+    exit;
+  }
+  print STDOUT "Installing...\n";
+  `tar -xzf $getfile`;
+  $movefile = $getfile;
+  $movefile =~ s/.tgz$//;
+  `mv $movefile $db_dir/$gene`;
+  `rm $getfile 2> /dev/null`;
+  print STDERR "Building vsearch UDB database...\n";
+  `vsearch --makeudb_usearch $db_dir/$gene/mqr.fasta --output $db_dir/$gene/mqr.udb --dbmask none --quiet`;
+  print STDOUT "Finished.\n";
+}
