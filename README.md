@@ -6,7 +6,7 @@ Version: 3.0 d1
 
 Copyright (C) 2011-2021 Johan Bengtsson-Palme et al.
 
-Contact: Johan Bengtsson-Palme, johan.bengtsson[at]microbiology.se
+Contact: Johan Bengtsson-Palme, johan.bengtsson-palme[at]microbiology.se
 
 A very quick installation guide follows below.
 
