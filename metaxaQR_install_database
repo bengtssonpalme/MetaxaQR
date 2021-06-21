@@ -162,6 +162,8 @@ if ($gene eq "") {
   `tar -xzf $getfile`;
   $movefile = $getfile;
   $movefile =~ s/.tgz$//;
+  `mkdir $db_dir/$gene 2> /dev/null`;
+  `mkdir $db_dir/$gene 2> /dev/null`;
   `mv $movefile $db_dir/$gene`;
   `rm $getfile 2> /dev/null`;
   print STDERR "Building vsearch UDB database...\n";
