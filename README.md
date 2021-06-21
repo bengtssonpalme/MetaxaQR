@@ -3,7 +3,9 @@ MetaxaQR: Accurate classification and curation of current and future DNA barcode
 
 Version: 3.0 d1
 **NOTE THAT THIS IS A DEVELOPMENT VERSION OF METAXAQR!**
+
 Copyright (C) 2011-2021 Johan Bengtsson-Palme et al.
+
 Contact: Johan Bengtsson-Palme, johan.bengtsson[at]microbiology.se
 
 A very quick installation guide follows below.
