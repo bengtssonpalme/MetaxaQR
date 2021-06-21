@@ -47,7 +47,7 @@ use List::Util qw(first max maxstr min minstr reduce shuffle sum);
 
 $bindir = $0;
 $bindir =~ s/metaxaQR_install_database$//;
-$db_dir = $bindir . "metaxaQR_db/";
+$db_dir = $bindir . "metaxaQR_db";
 $gene = "";
 $rep = "http://microbiology.se/sw/metaxaQR_dbs";
 $version = "";
@@ -100,8 +100,8 @@ for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
 
 if ($gene eq "") {
   @dblist = `curl -H "Cache-Control: no-cache" -s $rep/dbs.txt`;
-  print STDOUT "Gene/Database name  \tDescription (reference, build options and website)\n";
-  print STDOUT "==========================================================================\n";
+  print STDOUT "Gene/Database name  \tDescription (version, reference, build options and website)\n";
+  print STDOUT "=================================================================================\n";
   foreach $line (@dblist) {
     if ($line =~ m/[<>]/) {
       print STDOUT "ERROR! The repository $rep does not seem to be a valid repository.\n";      
@@ -111,6 +111,10 @@ if ($gene eq "") {
     $spaces = "                    ";
     $spaces = substr($spaces, length($name) - 1);
     print STDOUT $name . $spaces . "\t" . $desc . "\n";
+    if ($dbversion ne "") {
+      print STDOUT "                    ";
+      print STDOUT "\t  " . $dbversion . "\n";
+    }
     if ($reference ne "") {
       print STDOUT "                    ";
       print STDOUT "\t  " . $reference . "\n";
@@ -162,11 +166,12 @@ if ($gene eq "") {
   `tar -xzf $getfile`;
   $movefile = $getfile;
   $movefile =~ s/.tgz$//;
-  `mkdir $db_dir/$gene 2> /dev/null`;
-  `mkdir $db_dir/$gene 2> /dev/null`;
-  `mv $movefile $db_dir/$gene`;
+  `mkdir $db_dir 2> /dev/null`;
+  #`mkdir $db_dir/$gene 2> /dev/null`;
+  `rm -r $db_dir/$gene 2> /dev/null`;
+  `mv $movefile $db_dir/`;
   `rm $getfile 2> /dev/null`;
-  print STDERR "Building vsearch UDB database...\n";
+  print STDERR "Building vsearch UDB database... (this will take a long while)\n";
   `vsearch --makeudb_usearch $db_dir/$gene/mqr.fasta --output $db_dir/$gene/mqr.udb --dbmask none --quiet`;
   print STDOUT "Finished.\n";
 }
