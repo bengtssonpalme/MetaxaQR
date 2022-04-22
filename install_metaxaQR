@@ -1,0 +1,118 @@
+#!/usr/bin/perl
+
+## This little neat script installs metaxaQR in the default way
+print "MetaxaQR Installer\n";
+print "------------------\n";
+
+$homeDir = $ENV{"HOME"};
+
+print "Do you have superuser privileges? [yes/no, default = no]\n";
+chomp($su = <STDIN>);
+if (substr($su,0,1) eq "y") {
+  $su = 1;
+} else {
+  $su = 0;
+}
+
+if ($su == 1) {
+  print "Where do you want to install MetaxaQR? [default = /usr/local/bin/]\n";
+  chomp($bindir = <STDIN>);
+  if ($bindir eq "") {
+    $bindir = "/usr/local/bin/";
+  }
+} else {
+  print "Where do you want to install MetaxaQR? [default = $homeDir/bin/]\n";
+  chomp($bindir = <STDIN>);
+  if ($bindir eq "") {
+    $bindir = "$homeDir/bin/";
+  }
+}
+
+$bindir =~ s/\~/$homeDir/;
+
+print "Do you want to add $bindir to your PATH? [yes/no, default = yes]\n";
+chomp($su = <STDIN>);
+if (substr($su,0,1) eq "n") {
+  $pathWrite = 0;
+} else {
+  $pathWrite = 1;
+}
+
+chomp($errmsg = `ls $bindir 2>&1 >/dev/null`);
+if ($errmsg ne "") {
+  chomp($mkdirmsg = `mkdir $bindir 2>&1 >/dev/null`);
+  if ($mkdirmsg ne "") {
+    print "The specified directory does not exist, and could not be created. It is also possible that you do not have the privileges to write to it.\nTry rerunning the installer and choosing another directory.\nInstallation failed.\n";
+    exit;
+  }
+}
+
+print "Installing MetaxaQR in $bindir...\n";
+if ($su == 1) {
+  `sudo cp -r metaxaQR* $bindir`;
+  `sudo cp get_fasta $bindir`;
+} else {
+  `cp -r metaxaQR* $bindir`;
+  `cp -get_fasta $bindir`;
+}
+
+
+print "Setting permissions...\n";
+if ($su == 1) {
+  `sudo chmod 755 $bindir/metaxaQR`;
+  `sudo chmod 755 $bindir/metaxaQR_x`;
+  `sudo chmod 755 $bindir/metaxaQR_c`;
+  `sudo chmod 755 $bindir/metaxaQR_ttt`;
+  `sudo chmod 755 $bindir/metaxaQR_dc`;
+  `sudo chmod 755 $bindir/metaxaQR_si`;
+  `sudo chmod 755 $bindir/metaxaQR_rf`;
+  `sudo chmod 755 $bindir/metaxaQR_uc`;
+  `sudo chmod 755 $bindir/metaxaQR_install_databases`;
+  `sudo chmod 755 $bindir/get_fasta`;
+} else {
+  `chmod 755 $bindir/metaxaQR`;
+  `chmod 755 $bindir/metaxaQR_x`;
+  `chmod 755 $bindir/metaxaQR_c`;
+  `chmod 755 $bindir/metaxaQR_ttt`;
+  `chmod 755 $bindir/metaxaQR_dc`;
+  `chmod 755 $bindir/metaxaQR_si`;
+  `chmod 755 $bindir/metaxaQR_rf`;
+  `chmod 755 $bindir/metaxaQR_uc`;
+  `chmod 755 $bindir/metaxaQR_install_databases`;
+  `chmod 755 $bindir/get_fasta`;
+}
+
+if (substr($bindir,-1) eq "/") {
+  $bindir = substr($bindir,0,-1);
+}
+
+if ($pathWrite == 1) {
+  print "Adding $bindir to your PATH...\n";
+  open (PROFILE, ">>$homeDir/.profile");
+  print PROFILE "\n";
+  print PROFILE "# MetaxaQR executables\n";
+  print PROFILE "export PATH=$bindir\:\$PATH\n";
+  print PROFILE "# End of MetaxaQR executables\n";
+  open (PROFILE, ">>$homeDir/.bash_profile");
+  print PROFILE "\n";
+  print PROFILE "# MetaxaQR executables\n";
+  print PROFILE "export PATH=$bindir\:\$PATH\n";
+  print PROFILE "# End of MetaxaQR executables\n";
+  close (PROFILE);
+  close (PROFILE);
+}
+
+print "Do you want to download the SSU database for MetaxaQR? [yes/no, default = yes]\n";
+chomp($ssu_db = <STDIN>);
+if (substr($ssu_db,0,1) eq "y") {
+  if ($su == 1) {
+    `sudo metaxaQR_install_databases -g SSU`;
+  } else {
+    `metaxaQR_install_databases -g SSU`;
+  }
+}
+
+
+print "Installation finished!\nNow, close this terminal and open a new one.\nYou can then test if the installation succeeded by typing 'metaxaQR --help'\n";
+  
+

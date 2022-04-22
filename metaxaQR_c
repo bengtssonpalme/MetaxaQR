@@ -590,17 +590,17 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     }
     
     if ($masking == 1) {
-      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
     } else {
-      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+      `vsearch --usearch_global $input.$filenumber --db $blastDB.udb --id $search_ID --blast6out $tempDir/rRNA.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
     }
     
     if ($reference ne "") {
       ## Perform vsearch search against reference database
       if ($masking == 1) {
-	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
       } else {
-	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits 1 --quiet`;
+	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
       }
       
     }
@@ -757,212 +757,226 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
   $lastQuery = "";
 
   ## Read and analyse BLAST output file
-  while ($line = <BLASTOUT>) { # Read in the BLAST output file, line by line
-    chomp($line);		     # Remove any potential line feeds
-    if ($line eq "END") {
-      last;
-    }
-    $ssuQueries++;	# Add one to the number of inputted queries
-    
-    
-    #print STDERR $line . "\n";
-    
-    ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$line);
-    
-    $query =~ s/ .*//;
-    $subject =~ s/ .*//;
-    $subject =~ s/^lcl.//;
+  while ($lineB = <BLASTOUT>) { # Read in the BLAST output file, line by line
+    chomp($lineB);		     # Remove any potential line feeds
 
-    $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
-    if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
-      $queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
-      $writeQuery = substr($query,0,length($query) - 2); # Remove the last two characters ("|X") from the query identifier to restore the original query identifier for the output
-    } else { # If the query does not seem to be processed by metaxa_x
-      $writeQuery = $query; # Assure that the output query identifier will be the same as the input identifier
-      $queryType = ""; # Specify that there is no metaxa_x origin data for this sequence
-    }
-    $alnQuery = $writeQuery;
-    $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
-    
-    $line = $query . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+    ## Collect list of the same hits
+    ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$lineB);
 
-    if ($out_table == 1) {	# If table output is on
-      if ($line ne "END") {
-	print TABLE $line . "\n";	# Print to blast table output
-      }
-    }
-
-    if (defined($refHits{$query})) {
+    if ($lastQuery eq "") {
+      undef @lineList;
+      $ssuQueries++;	# Add one to the number of inputted queries
+      $lastQuery = $query;
+      push(@lineList, $lineB);
       next;
-    }
-
-    $mqr_label = $labels{$subject};
-    $mqr_tree = $family_tree{$mqr_label};
-    $mqr_id_level = findIDLevel($identity);
-    if ($mqr_id_level == 100) {
-      $mqr_tax = $taxdata{$mqr_label};
-      $split_tree = $mqr_label;
     } else {
-      if ($mqr_id_level == 0) {
-	$mqr_tax = "Unknown";
-	$split_tree = "Unknown";
+      if ($lastQuery eq $query) {
+	push(@lineList, $lineB);
+	next;
       } else {
-	$split_tree = $mqr_tree;
-	$split_at = "MQR_$mqr_genetype\_$mqr_id_level";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
-	$split_tree =~ s/.*$split_at/$split_at/;
-	$split_tree =~ s/ .*//;
-	$mqr_tax = $taxdata{$split_tree};
-      }
-    }
-    $rID = $identity / 100;
-    $rMLen = $length; # Get the match length
-    $rQLen = length($sequences{$query}); # Load the length of the query DNA sequence
-    $rDLen = $rQLen - $rMLen; # Calculate the non-matched length of the sequence
-#    $rMScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rMLen ** ($rID ** 1.1) ) ) ) ) );
-#    $rDScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rDLen ** ($rID ** 1.1) ) ) ) ) );
-    $rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rMLen));
-    if ($rDLen > 0) {
-      $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rDLen));
-    } else {
-      $rDScore = 0;
-    }
-
-    $rScore = $rMScore - $rDScore ** 2;
-    if ($rScore < 0) {
-      $rScore = 0;
-    }
-    $confidence = $rScore * 100;
+	$common_tax = "";
+	$lastQuery = $query;
+	foreach $line (@lineList) {
+	  #print STDERR $line . "\n";
+	  
+	  ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$line);
     
-    print OUTMQR $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $split_tree . "\t" . $mqr_tax . "\t" . $rScore . "\n";
+	  $query =~ s/ .*//;
+	  $subject =~ s/ .*//;
+	  $subject =~ s/^lcl.//;
+	  
+	  $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
+	  if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
+	    $queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
+	    $writeQuery = substr($query,0,length($query) - 2); # Remove the last two characters ("|X") from the query identifier to restore the original query identifier for the output
+	  } else { # If the query does not seem to be processed by metaxa_x
+	    $writeQuery = $query; # Assure that the output query identifier will be the same as the input identifier
+	    $queryType = ""; # Specify that there is no metaxa_x origin data for this sequence
+	  }
+	  $alnQuery = $writeQuery;
+	  $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
+	  
+	  $line = $query . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+	  
+	  if ($out_table == 1) {	# If table output is on
+	    if ($line ne "END") {
+	      print TABLE $line . "\n";	# Print to blast table output
+	    }
+	  }
+	  
+	  if (defined($refHits{$query})) {
+	    next;
+	  }
 
-    if ($confidence < $C) {
-      if ($confidence >= 50) {
-	$mqr_id_levelB = findIDLevel($confidence);
-	if ($mqr_id_levelB == 100) {
-	  $mqr_taxB = $taxdata{$mqr_label};
-	  $split_treeB = $mqr_labelB;
-	} else {
-	  if ($mqr_id_levelB == 0) {
-	    $mqr_taxB = "Unknown";
-	    $split_treeB = "Unknown";
+	  $mqr_label = $labels{$subject};
+	  $mqr_tree = $family_tree{$mqr_label};
+	  $mqr_id_level = findIDLevel($identity);
+	  if ($mqr_id_level == 100) {
+	    $mqr_tax = $taxdata{$mqr_label};
+	    $split_tree = $mqr_label;
 	  } else {
-	    $split_treeB = $mqr_tree;
-	    $split_atB = "MQR_$mqr_genetype\_$mqr_id_levelB";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
-	    $split_treeB =~ s/.*$split_atB/$split_atB/;
-	    $split_treeB =~ s/ .*//;
-	    $mqr_taxB = $taxdata{$split_treeB};
+	    if ($mqr_id_level == 0) {
+	      $mqr_tax = "Unknown";
+	      $split_tree = "Unknown";
+	    } else {
+	      $split_tree = $mqr_tree;
+	      $split_at = "MQR_$mqr_genetype\_$mqr_id_level";   ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
+	      $split_tree =~ s/.*$split_at/$split_at/;
+	      $split_tree =~ s/ .*//;
+	      $mqr_tax = $taxdata{$split_tree};
+	    }
+	  }
+
+	  if ($common_tax eq "") {
+	    $common_tax = $mqr_tax;
+	  } else {
+	    $new_common_tax = "";
+	    for ($c = length($common_tax); $c > 0; $c--) {
+	      if (substr($common_tax, 0, $c) eq substr($mqr_tax, 0, $c)) {
+		$new_common_tax = substr($common_tax, 0, $c);
+		last;
+	      }
+	    }
+	    $common_tax = $new_common_tax;
 	  }
 	}
-	print TAXONOMY $writeQuery . "\t" . $mqr_taxB . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
-      } else {
-	print TAXONOMY $writeQuery . "\t" . "Unknown" . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
-      }
-    } else {
-      print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
-    }
-	  
-    $agreement = $mqr_tax;
-    if ($agreement eq "Mismatch") {
-      $agreement = "Uncertain";
-    }
-    $suggestedType = uc(substr($agreement, 0, 1));  # Best hit is first character of agreement
-    if ($suggestedType eq $queryType) {
-      $bestType = $suggestedType;
-    } else {
-      $bestType = "U";
-      if ($confidence - $H > 0) {
-	$bestType = $suggestedType;
-      }
-      if ($H - $confidence > 0) {
-	$bestType = $queryType;
-      }
-    }
+	$mqr_tax = $common_tax;
+	
+	$rID = $identity / 100;
+	$rMLen = $length; # Get the match length
+	$rQLen = length($sequences{$query}); # Load the length of the query DNA sequence
+	$rDLen = $rQLen - $rMLen; # Calculate the non-matched length of the sequence
+	#    $rMScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rMLen ** ($rID ** 1.1) ) ) ) ) );
+	#    $rDScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rDLen ** ($rID ** 1.1) ) ) ) ) );
+	$rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rMLen));
+	if ($rDLen > 0) {
+	  $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rDLen));
+	} else {
+	  $rDScore = 0;
+	}
 
-    $DNA = $sequences{$query}; # Load this DNA sequence
-    $inputList{$query} = 1; # Indicate that this sequence had vsearch matches
-    
-    $geneType = uc($gene);
-    if (($geneType eq "SSU") || ($geneType eq "LSU")) {
-      $geneType = $geneType . " rRNA";
-    }
-    $ssuDB++; # Add one to the number of queries finding at least one match in the database
-   
-    if ($bestType eq "A") { # If the most likely rRNA type is archaea
-      $ssuA++; # Add one to the number of archeal rRNA sequences
-      push(@ssuAList,$writeQuery); # Add this entry to the list of archeal rRNA sequences
-      print AFASTA ">$writeQuery Archaeal $geneType\n";	# Write FASTA definition line
-      print AFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "B") { # If the most likely rRNA type is bacteria
-      $ssuB++; # Add one to the number of bacterial rRNA sequences
-      push(@ssuBList,$writeQuery); # Add this entry to the list of bacterial rRNA sequences
-      print BFASTA ">$writeQuery Bacterial $geneType\n"; # Write FASTA definition line
-      print BFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "E") { # If the most likely rRNA type is eukaryote
-      $ssuE++; # Add one to the number of eukaryote rRNA sequences
-      push(@ssuEList,$writeQuery); # Add this entry to the list of eukaryote rRNA sequences
-      print EFASTA ">$writeQuery Eukaryotic $geneType\n"; # Write FASTA definition line
-      print EFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "C") { # If the most likely rRNA type is chloroplast
-      $ssuC++; # Add one to the number of chloroplast rRNA sequences
-      push(@ssuCList,$writeQuery); # Add this entry to the list of chloroplast rRNA sequences
-      print CFASTA ">$writeQuery Chloroplast $geneType\n"; # Write FASTA definition line
-      print CFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "M") { # If the most likely rRNA type is mitochondrial 16S
-      $ssuM++; # Add one to the number of mitochondrial rRNA sequences
-      push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
-      print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
-      print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "N") { # If the most likely rRNA type is mitochondrial 12S
-      $ssuM++; # Add one to the number of mitochondrial rRNA sequences
-      push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
-      print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
-      print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
-    }
-    if ($bestType eq "U") { # If the most likely rRNA type is uncertain
-      $ssuU++; # Add one to the number of rRNA sequences of uncertain origin
-      push(@ssuUList,$writeQuery . " #"); # Add this entry to the list of rRNA sequences of uncertain origin
-      print UFASTA ">$writeQuery Unknown $geneType\n"; # Write definition line to the uncertain FASTA file
-      print UFASTA "$DNA\n"; # Write the DNA sequence to the uncertain FASTA file
-      if ($out_align eq "u") { # If only uncertain sequences should be aligned
-	open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
-	print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
-	print ALNFASTA "$DNA\n"; # Write the DNA sequence
-	$dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
-	print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
-	close (ALNFASTA); # Close the alignment FASTA input file
-	`mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+	$rScore = $rMScore - $rDScore ** 2;
+	if ($rScore < 0) {
+	  $rScore = 0;
+	}
+	$confidence = $rScore * 100;
+	
+	print OUTMQR $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $split_tree . "\t" . $mqr_tax . "\t" . $rScore . "\n";
+	
+	if ($confidence < $C) {
+	  print TAXONOMY $writeQuery . "\t" . "Unknown" . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	} else {
+	  print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	}
+	
+	$agreement = $mqr_tax;
+	if ($agreement eq "Mismatch") {
+	  $agreement = "Uncertain";
+	}
+	$suggestedType = uc(substr($agreement, 0, 1));  # Best hit is first character of agreement
+	if ($suggestedType eq $queryType) {
+	  $bestType = $suggestedType;
+	} else {
+	  $bestType = "U";
+	  if ($confidence - $H > 0) {
+	    $bestType = $suggestedType;
+	  }
+	  if ($H - $confidence > 0) {
+	    $bestType = $queryType;
+	  }
+	}
+	
+	$DNA = $sequences{$query}; # Load this DNA sequence
+	$inputList{$query} = 1; # Indicate that this sequence had vsearch matches
+	
+	$geneType = uc($gene);
+	if (($geneType eq "SSU") || ($geneType eq "LSU")) {
+	  $geneType = $geneType . " rRNA";
+	}
+	$ssuDB++; # Add one to the number of queries finding at least one match in the database
+	
+	if ($bestType eq "A") { # If the most likely rRNA type is archaea
+	  $ssuA++; # Add one to the number of archeal rRNA sequences
+	  push(@ssuAList,$writeQuery); # Add this entry to the list of archeal rRNA sequences
+	  print AFASTA ">$writeQuery Archaeal $geneType\n";	# Write FASTA definition line
+	  print AFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "B") { # If the most likely rRNA type is bacteria
+	  $ssuB++; # Add one to the number of bacterial rRNA sequences
+	  push(@ssuBList,$writeQuery); # Add this entry to the list of bacterial rRNA sequences
+	  print BFASTA ">$writeQuery Bacterial $geneType\n"; # Write FASTA definition line
+	  print BFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "E") { # If the most likely rRNA type is eukaryote
+	  $ssuE++; # Add one to the number of eukaryote rRNA sequences
+	  push(@ssuEList,$writeQuery); # Add this entry to the list of eukaryote rRNA sequences
+	  print EFASTA ">$writeQuery Eukaryotic $geneType\n"; # Write FASTA definition line
+	  print EFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "C") { # If the most likely rRNA type is chloroplast
+	  $ssuC++; # Add one to the number of chloroplast rRNA sequences
+	  push(@ssuCList,$writeQuery); # Add this entry to the list of chloroplast rRNA sequences
+	  print CFASTA ">$writeQuery Chloroplast $geneType\n"; # Write FASTA definition line
+	  print CFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "M") { # If the most likely rRNA type is mitochondrial 16S
+	  $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+	  push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
+	  print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
+	  print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "N") { # If the most likely rRNA type is mitochondrial 12S
+	  $ssuM++; # Add one to the number of mitochondrial rRNA sequences
+	  push(@ssuMList,$writeQuery); # Add this entry to the list of mitochondrial rRNA sequences
+	  print MFASTA ">$writeQuery Mitochondrial $geneType\n"; # Write FASTA definition line
+	  print MFASTA "$DNA\n"; # Write the DNA sequence to the FASTA file
+	}
+	if ($bestType eq "U") { # If the most likely rRNA type is uncertain
+	  $ssuU++; # Add one to the number of rRNA sequences of uncertain origin
+	  push(@ssuUList,$writeQuery . " #"); # Add this entry to the list of rRNA sequences of uncertain origin
+	  print UFASTA ">$writeQuery Unknown $geneType\n"; # Write definition line to the uncertain FASTA file
+	  print UFASTA "$DNA\n"; # Write the DNA sequence to the uncertain FASTA file
+	  if ($out_align eq "u") { # If only uncertain sequences should be aligned
+	    open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
+	    print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
+	    print ALNFASTA "$DNA\n"; # Write the DNA sequence
+	    $dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
+	    print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
+	    close (ALNFASTA); # Close the alignment FASTA input file
+	    `mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+	  }
+	} else {
+	  if ($out_align eq "a") { # If all sequences should automatially be aligned
+	    open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
+	    print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
+	    print ALNFASTA "$DNA\n"; # Write the DNA sequence
+	    $dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
+	    print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
+	    close (ALNFASTA); # Close the alignment FASTA input file
+	    `mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+	  }
+	}
       }
-    } else {
-      if ($out_align eq "a") { # If all sequences should automatially be aligned
-	open (ALNFASTA, ">$output\_alignments/$alnQuery.unaligned.fasta"); # Create a FASTA file to use as input for the alignment for this query
-	print ALNFASTA ">$writeQuery $geneType sequence\n"; # Write the definition line
-	print ALNFASTA "$DNA\n"; # Write the DNA sequence
-	$dbSeqToInclude = `$bindir/get_fasta $subject $blastDB.fasta`; # Get the database matching sequence (this is slow...)
-	print ALNFASTA "$dbSeqToInclude\n"; # Write the database sequence and identifier to the alignment file 
-	close (ALNFASTA); # Close the alignment FASTA input file
-	`mafft --maxiterate 10 $output\_alignments/$alnQuery.unaligned.fasta > $output\_alignments/$alnQuery.aligned.fasta 2>> $tempDir/mafft_log.txt`;	# Send the sequences into MAFFT for alignment
+      undef @lineList;
+      $ssuQueries++;	# Add one to the number of inputted queries
+      if ($lineB eq "END") {
+	last;
       }
+      push(@lineList, $lineB);
     }
   }
   close BLASTOUT;			# Close the blast output file
-  
   ## Save sequences not found in the BLAST-report
   foreach $query (keys(%inputList)) { # For all sequences that found no matches in the blast search
     
     if (defined($refHits{$query})) {
       next;
     }
-
     if ($inputList{$query} == 0) {
-    
+      
       ## New query started...
       $ssuQueries++;	   # Add one to the number of inputted queries
-    
+      
       $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
       if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
 	$queryType = substr($queryType,1,1); # Remove the leading "|" from the query type
