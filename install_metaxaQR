@@ -62,7 +62,7 @@ if ($su == 1) {
   `sudo cp get_fasta $bindir`;
 } else {
   `cp -r metaxaQR* $bindir`;
-  `cp -get_fasta $bindir`;
+  `cp get_fasta $bindir`;
 }
 
 
