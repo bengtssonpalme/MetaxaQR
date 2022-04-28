@@ -1,0 +1,1136 @@
+#!/usr/bin/perl
+# Metaxa 3.0
+$app_title     = "MetaxaQR Diversity Tools - Rarefaction Analysis tool";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"    metaxaQR_rf -- Rarefaction Analysis Tool\
+    Copyright (C) 2013-2018 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- None\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+$options = "\
+-i {file} : MetaxaQR taxonomy output file to process (*.taxonomy.txt)\
+-o {file} : Base for the name of output file(s)\
+
+Entry selection options:\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Include only classifications of this type(s)\
+             (several can be comma-separated), default is all\
+-r {value} : Reliability cutoff, entries below cutoff will be classified as 'unknown', default = 0\
+-l {value} : Length cutoff (in bp) of best hit, entries below cutoff will be classified as 'unknown', default = 50\
+-d {value} : Identity cutoff of best hit (in percent), entries below cutoff will be classified as 'unknown', default = 0\
+-m {integer} : Maximum resolution level for taxonomic traversal, zero is unlimited, default = 0\
+-n {integer} : Minimum resolution level for taxonomic traversal, starting at level 1, default = 1\
+-s {T or F} : Investigate only the last taxonomic level (in good cases species resolution), default is off (F)\
+-u {T or F} : Treat unclassified entries as unknowns, default is off (F), which will use as much taxonomic information as possible\
+--remove_na {T or F} : Set sequence entries with no blast hits to 'Unknown', default is on (T)\
+
+Rarefaction options:
+--model {bengtsson-palme,b-p,chao1,ichao1,ace,all} : the model used for estimating species richness, 'all' will output data for all three models, default = bengtsson-palme (b-p)\
+--resamples {integer} : number of resamplings, default = 1000\
+--write {integer} : write interval in the output, default = 1\
+--size {integer} : total number of sequences, by default this is set to the sum of all counts\
+--scale {integer} : scales all the samples to have this number of sequences\
+--exclude_rows {list of integers} : a comma-separated list of rows to NOT include in the analysis\
+--ace_rare {integer} : the rare taxa cutoff used for the ACE estimator, default = 10\
+
+Output options:\
+--summary {T or F} : Summary of results output, on (T) by default\
+--lists {T or F} : Output lists of counts for different taxa, one for each traversal level, on (T) by default\
+--separate {T or F} : Outputs rarefaction analysis results separately for the different origins, on (T) by default\
+--unknown {T or F} : Outputs a list of entries designated as unknowns, with their statistics, off (F) by default\
+--sampled {T or F} : Output lists of the number of individuals sampled for different taxa, one for each traversal level, off (F) by default\
+
+-h : displays this help message\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of MetaxaQR\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/_rf\$//;
+$input = "";
+$output = "metaxaQR_rf_out";
+$type = "all";
+$C = 0;
+$L = 50;
+$D = 0;
+$M = 0;
+$N = 1;
+$S = 0;
+$U = 0;
+$abund_model = "b-p";
+$ace_rare = 10;
+$include_na = 0;
+$out_sum = 1;
+$out_sep = 1;
+$out_unk = 0;
+$out_lists = 1;
+$out_samp = 0;
+$debug = 0;
+####
+$R = 1000;
+$W = 1;
+$cpu = 1;
+$save_raw = 0;
+$size = 0;
+$scale = 0;
+$exclude = 0;
+$verbose = 1;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input files from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+
+  if ($arg eq "-t") {   # Select what types of rRNAs to look for using the -t flag
+    $i++;
+    $type = @ARGV[$i];
+    if ($type ne "all") {
+      $type = "," . $type;
+    }
+  }
+  if ($arg eq "-r") {   # Set the reliability cutoff using the -r flag
+    $i++;
+    $C = @ARGV[$i];
+  }
+  if ($arg eq "-l") {   # Set the length cutoff using the -l flag
+    $i++;
+    $L = @ARGV[$i];
+  }
+  if ($arg eq "-d") {   # Set the identity cutoff using the -d flag
+    $i++;
+    $D = @ARGV[$i];
+  }
+  if ($arg eq "-m") {   # Set the maximum level using the -m flag
+    $i++;
+    $M = @ARGV[$i];
+  }
+  if ($arg eq "-n") {   # Set the minimum level using the -n flag
+    $i++;
+    $N = @ARGV[$i];
+  }
+
+  if ($arg eq "-u") {   # Set the mode to treat unclassified entries
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $U = 0;
+    } else {
+      $U = 1;
+    }
+  }
+
+  if ($arg eq "-s") {   # Set the species classification
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $S = 0;
+    } else {
+      $S = 1;
+    }
+  }
+
+
+
+  if ($arg eq "--remove_na") {   # Determine whether or not to remove N/A entries based on the --remove_na flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $include_na = 0;
+    } else {
+      $include_na = 1;
+    }
+  }
+
+
+  if ($arg eq "--summary") {   # Determine whether or not to output a summary based on the --summary flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sum = 1;
+    } else {
+      $out_sum = 0;
+    }
+  }
+  if ($arg eq "--lists") {   # Determine whether or not to output lists at different levels based on the --lists flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_lists = 1;
+    } else {
+      $out_lists = 0;
+    }
+  }
+  if ($arg eq "--sampled") {   # Determine whether or not to output lists of sampled individuals at different levels based on the --sampled flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_samp = 1;
+    } else {
+      $out_samp = 0;
+    }
+  }
+  if ($arg eq "--separate") {   # Determine whether or not to separate input file based on the --separate flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sep = 1;
+    } else {
+      $out_sep = 0;
+    }
+  }
+  if ($arg eq "--unknown") {   # Determine whether or not to output a list of unknowns based on the --unknown flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_unk = 1;
+    } else {
+      $out_unk = 0;
+    }
+  }
+  if ($arg eq "--silent") {   # Determine whether or not to output anything to the screen based on the --silent flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $silent = 1;
+    } else {
+      $silent = 0;
+    }
+  }
+
+  if ($arg eq "--model") {		# Read the abundance model
+    $i++;
+    $abund_model = @ARGV[$i];
+    if (($abund_model =~ m/palme/) || ($abund_model =~ m/bengt/)) {
+      $abund_model = "b-p";
+    }
+  }
+  if ($arg eq "--ace_rare") {	# Read ACE cutoff
+    $i++;
+    $ace_rare = @ARGV[$i];
+  }
+
+  if ($arg eq "--resamples") {		# Read resampling count
+    $i++;
+    $R = @ARGV[$i];
+  }
+  if ($arg eq "--write") {		# Read write interval
+    $i++;
+    $W = @ARGV[$i];
+  }
+
+
+  if ($arg eq "--cpu") {	# Read CPU flag
+    $i++;
+    $cpu = @ARGV[$i];
+  }
+  if ($arg eq "--size") {	# Read size flag
+    $i++;
+    $size = @ARGV[$i];
+  }
+
+  if ($arg eq "--scale") {	# Read scale flag
+    $i++;
+    $scale = @ARGV[$i];
+  }
+
+  if ($arg eq "--save_raw") {	# Read save intermediate data
+    $save_raw = 1;
+  }
+
+  ## If "-h" or "--help" are among the options, output usage data and options
+  if (($arg eq "-h") || ($arg eq "--help")) {
+    print "Usage: metaxaQR_rf -i <input file> -o <output file>\nOptions:$options";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  if ($arg eq "--debug") {   # Run MetaxaQR in debug mode
+    $debug = 1;
+  }
+}
+
+if ($input eq "") {   # If the input is empty, then show an error message and exit MetaxaQR
+  print STDERR "FATAL ERROR :: You have not specified an input file (-i option)!\
+This error is fatal, and metaxaQR_rf will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+## Create a summary file
+$now = localtime;
+if ($out_sum == 1) {   # If summary output is on
+  open (SUMMARY, ">$output.taxonomy.summary.txt");   # Create the summary file
+  print SUMMARY "MetaxaQR_rf run started at $now.\n";   # Output the starting time for the analysis
+  print SUMMARY "-----------------------------------------------------------------\n";
+}
+
+## Load input file
+open (INPUT, $input);
+chomp(@input = <INPUT>);
+close INPUT;
+
+if (scalar(@input) == 0) {   # If the input file is empty, then show an error message and exit MetaxaQR
+  print STDERR "FATAL ERROR :: The input file ($input) does not exist (or is empty)!\
+This error is fatal, and metaxaQR_rf will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY "Will process " . scalar(@input) . " entries...\n";   # Output progress
+}
+
+if ($out_unk == 1) {  # If unknown list should be written
+  open (UNKNOWN, ">$output.unknown.txt");  # Open the unknown list output file
+}
+
+$maxLevel = 0;  # Set max-level to zero
+$unknown = 0;  # Set the unknown counter to zero
+## Preprocess input file, and filter out sequences not passing cutoffs
+foreach $entry (@input) {  # Go through all entries
+  if ((substr($entry,0,1) ne " ") && (substr($entry,0,1) ne "\t")) {  # If this line does start with a sequence ID
+    ($id, $tax, $identity, $length, $reliability) = split('\t', $entry);  # Split the line
+
+    if (($identity eq "N/A") && ($include_na == 1)) {
+        # Don't modify tax
+    } else {
+      if ($identity < $D) {  # If the identity is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+      if ($length < $L) {  # If the length is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+      if ($reliability < $C) {  # If the reliability is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+    }
+    if ($tax eq "Unknown") {  # If this entry is classified as unknown
+      $unknown++;  # Add one to the unknown counter
+      if ($out_unk == 1) {  # If unknown list should be written
+	print UNKNOWN $entry . "\n";
+      }
+    }
+    $included = 0;  # Set the included indicator to false
+    @tax = split(';',$tax);  # Get the taxonomy
+    if ($S == 1) {  # If "species" level classification only
+      $tax = @tax[-1];  # The taxonomy is only the last level of the tax tree
+    }
+    if ($type ne "all") {  # If only some types should be considered
+      if (($type =~ m/,a/) && (@tax[0] eq "Archaea")) { # If archaea are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,b/) && (@tax[0] eq "Bacteria")) { # If bacteria are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,c/) && (@tax[0] eq "Chloroplast")) { # If chloroplasts are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,e/) && (@tax[0] eq "Eukaryota")) { # If eukaryota are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,m/) && (@tax[0] eq "Mitochondria")) { # If mitochondria are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,o/) && ($included == 0)) { # If other types are included among the types, and this has not been included in another category
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+    } else {
+      push(@entries,$tax);  # Add this entry
+      $included = 1;   # Indicate that the entry was included
+    }
+    
+    if ($included == 1) {  # If this entry was included
+      if (scalar(@tax) > $maxLevel) {  # If the number of taxonomy levels is higher for this entry than the previous max
+	$maxLevel = scalar(@tax);  # Set the max to this number of levels
+      }
+    }
+  }
+}
+
+if ($out_unk == 1) {  # If unknown list should be written
+  close UNKNOWN;
+}
+
+
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY scalar(@entries) . " entries passed type filtering,\n";   # Output progress
+  print SUMMARY "of which $unknown are regarded unknown.\n";   # Output progress
+  print SUMMARY "Maximum taxonomic depth is $maxLevel.\n";   # Output progress
+  print SUMMARY "-----------------------------------------------------------------\n";
+}
+
+if ($M == 0) {  # If there's no limit to the maximum level
+  $endLevel = $maxLevel;  # Set the end level to the max level
+}
+if ($M > 0) {  # If there's a limit to the maximum level
+  if ($maxLevel < $M) {  # If the max level is lower than the limit
+    $endLevel = $maxLevel;  # Set the end level to the max level
+  } else {  # If the max level is higher than the limit
+    $endLevel = $M;  # Set the end level to the limit
+  }
+}
+
+if ($S == 1) {  # If "species" level classification only
+  $N = 1;  # Only process level 1
+  $endLevel = 1;  # Which is the only level there is
+}
+
+## Traverse taxonomy at different levels...
+for ($level = $N; $level <= $endLevel; $level++) {  # Go through all specified taxonomic levels
+
+  if ($out_sep == 1) {  # If output should be separated
+    open (ARCH, ">$output.archaea.rf.$level.txt");  # Open the archaea output file
+    if ($abund_model =~ m/all/) {
+      print ARCH "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print ARCH "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+    open (BACT, ">$output.bacteria.rf.$level.txt");  # Open the bacteria output file
+    if ($abund_model =~ m/all/) {
+      print BACT "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print BACT "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+    open (EUK, ">$output.eukaryota.rf.$level.txt");  # Open the eukaroyta output file
+    if ($abund_model =~ m/all/) {
+      print EUK "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print EUK "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+    open (CHLORO, ">$output.chloroplasts.rf.$level.txt");  # Open the chloroplasts output file
+    if ($abund_model =~ m/all/) {
+      print CHLORO "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print CHLORO "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+    open (MITO, ">$output.mitochondria.rf.$level.txt");  # Open the mitochondria output file
+    if ($abund_model =~ m/all/) {
+      print MITO "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print MITO "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+  } else {
+    open (ALL, ">$output.combined.rf.$level.txt");  # Open the combined output file
+    if ($abund_model =~ m/all/) {
+      print ALL "Sampled sequences\tBengtsson-Palme model\tChao1\tiChao1\tACE\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    } else {
+      print ALL "Sampled sequences\tModeled number of taxa\tObserved number of taxa\tTheoretical maximum number of taxa\n";
+    }
+  }
+  
+  if ($out_lists == 1) {  # If list output is on
+    open (LIST, ">$output.level_$level.txt");  # Open the output file
+  }
+  if ($out_sum == 1) {   # If summary output is on
+    print SUMMARY "Statistics for level $level:\n";   # Output progress
+  }
+
+  ## Gather taxa information
+  undef %taxa;  # Undef the taxa hash
+  undef @unitNames;
+  undef @output;
+  $unclassed = 0;  # Set unclassed counter to zero
+  foreach $tax (@entries) {  # Go through all the entries
+    if ($tax eq "") {
+      next;
+    }
+    @tax = split(';',$tax);  # Split the taxonomy
+    if (scalar(@tax) < $level) {  # If this entry doesn't have a classification at this level
+      $last_tax = @tax[-1];  # Save the last classified part of the taxonomy
+      if ($tax ne "Unknown") {  # If this is not completely unknown
+	for ($unc_level = scalar(@tax) - 1; $unc_level < $level; $unc_level++) {
+	  @tax[$unc_level] = "Unclassified " . $last_tax;  # Add an unclassified identitifier
+	}
+      }
+      $unclassed++;  # Add one to the number of unclassified
+    }
+    $leveltax = "";   # Empty the tax data for this entry
+    $this_is_unknown = 0;
+    for ($i = 0; $i < $level; $i++) {  # Get data for all levels up to current level
+      $leveltax = $leveltax . @tax[$i] . ";";  # Add the current level to the tax data
+      if (substr(@tax[$i],0,7) eq "Unknown") {
+	$this_is_unknown = 1;
+      }
+      if (($U == 1) && (substr(@tax[$i],0,12) eq "Unclassified")) {
+	$this_is_unknown = 1;
+      }
+    }
+    $leveltax = substr($leveltax,0,length($leveltax) - 1);  # Remove the last semicolon of leveltax
+    if ($this_is_unknown == 1) {
+      if ($tax[0] eq "Unknown") {
+	if (defined($taxa{"Unknown"})) {  # If the entry for this taxa exists
+	  $taxa{"Unknown"} = $taxa{"Unknown"} + 1;  # Add one to the counts of it
+	} else {  # Otherwise...
+	  $taxa{"Unknown"} = 1;  # ... set the count to one
+	  push(@unitNames, "Unknown");
+	}
+      } else {   
+	$unc_type = @tax[0];
+	$unc_type =~ s/Unclassified //;
+	if (defined($taxa{"Unknown $unc_type"})) {  # If the entry for this taxa exists
+	  $taxa{"Unknown $unc_type"} = $taxa{"Unknown $unc_type"} + 1;  # Add one to the counts of it
+	} else {  # Otherwise...
+	  $taxa{"Unknown $unc_type"} = 1;  # ... set the count to one
+	  push(@unitNames, "Unknown $unc_type");
+	}
+      }     
+    } else { 
+      if (defined($taxa{$leveltax})) {  # If the entry for this taxa exists
+	$taxa{$leveltax} = $taxa{$leveltax} + 1;  # Add one to the counts of it
+      } else {  # Otherwise...
+	$taxa{$leveltax} = 1;  # ... set the count to one
+	push(@unitNames, $leveltax);
+      }
+    }
+  }
+
+  $unitCount = scalar(keys(%taxa));
+  $maxSize = 0;
+  for ($u = 0; $u < $unitCount; $u++) {
+    $unit_name = @unitNames[$u];
+    $maxSize = $maxSize + $taxa{"$unit_name"};
+  }
+
+  if ($size > 0) {
+    $taxa{"Other"} = $size - $unitCount;
+    push(@unitNames, "Other");
+    $unitCount++;
+  }
+
+  if ($scale > 0) {
+    $maxSize = $scale;
+  }
+
+  if ($verbose == 1) {
+    $now = localtime;
+    print STDERR "$now : Level $level contains $unitCount units.\n";
+  }
+
+  if ($out_sep == 1) {
+    @types = ("Archaea","Bacteria","Eukaryota","Chloroplast","Mitochondria","Unknown");
+  } else {
+    @types = ("All","Unknown");
+  }
+
+  foreach $currentType (@types) {
+    
+    undef %sampledPerUnit;
+    undef %maxPerUnit;
+    undef %minPerUnit;
+    
+    if ($out_samp == 1) {
+      open (SAMP, ">$output.$currentType.$level.sampled.txt");
+      print SAMP "Iteration";
+      
+      open (MAX, ">$output.$currentType.$level.sampled.max.txt");
+      print MAX "Iteration";
+      
+      open (MIN, ">$output.$currentType.$level.sampled.min.txt");
+      print MIN "Iteration";
+    }
+      
+    $typeCount = 0;
+    undef @abundances;
+    for ($u = 0; $u < scalar(@unitNames); $u++) {
+      $unit_name = @unitNames[$u];
+      push(@abundances, $taxa{"$unit_name"});
+      if (($unit_name !~ m/^$currentType/) && ($currentType ne "All") && ($unit_name ne "Unknown $currentType") && ($unit_name ne "Unknown")) {
+	next;
+      }
+      $typeCount++;
+      
+      if ($out_samp == 1) {
+	print SAMP "\t" . $unit_name;
+	print MAX "\t" . $unit_name;
+	print MIN "\t" . $unit_name;
+      }
+    }
+    if ($out_samp == 1) {
+      print SAMP "\n";
+      print MAX "\n";
+      print MIN "\n";
+    }
+
+    if (($typeCount == 0)) {
+      next;
+    }
+
+    if ($verbose == 1) {
+      $now = localtime;
+      print STDERR "$now : Resampling $currentType at level $level ...\n";
+    }
+    
+  
+    undef @resultVector;
+    undef @modelVector;
+    undef @chao1Vector;
+    undef @ichao1Vector;
+    undef @ACEVector;
+    undef @unknownVector;
+    undef @output;
+    undef @modelOutput;
+    undef @truextonCount;
+    @output[0] = "0\t0\t0";
+    if ($abund_model =~ m/all/) {
+      @output[0] = "0\t0\t0\t0\t0\t0";
+    }
+    @modelOutput[0] = 0;
+    @chao1Output[0] = 0;
+    @ichao1Output[0] = 0;
+    @ACEOutput[0] = 0;
+
+
+    for ($r = 1; $r <= $R; $r++) {
+
+      if ($verbose == 1) {
+	if (($r / $R * 10) == int($r / $R * 10)) {
+	  print STDERR int($r / $R * 10) * 10 . "% .. ";
+	}
+      }
+
+      undef @sampledUnits;
+      undef @sampleVector;
+      $sampleCount = 0;
+      $unknownCount = 0;
+      $totalCount = 0;
+      
+      $maxabund = 0;
+      $max_name = "";
+      for ($u = 0; $u < scalar(@unitNames); $u++) {
+	$unit_name = @unitNames[$u];
+	$totalCount = $totalCount + $taxa{"$unit_name"};
+	push(@sampleVector, $taxa{"$unit_name"});
+	$sampleCount = $sampleCount + $taxa{"$unit_name"};
+	if (($unit_name !~ m/^$currentType/) && ($currentType ne "All") && ($unit_name ne "Unknown $currentType") && ($unit_name ne "Unknown")) {
+	  next;
+	}
+	if ($taxa{"$unit_name"} > $maxabund) {
+	  $maxabund = $taxa{"$unit_name"};
+	  $max_name = $unit_name;
+	}
+	if (($unit_name =~ m/Unclassified/) ||  ($unit_name =~ m/Unknown $currentType/) || ($unit_name eq "Unknown"))  {
+	  $unknownCount = $taxa{"$unit_name"};
+	}
+      }
+
+      
+      if ($scale > 0) {
+	$factor = int($scale / $sampleCount) + 1;
+	for ($i = 0; $i < scalar(@sampleVector); $i++) {
+	  @sampleVector[$i] = @sampleVector[$i] * $factor;
+	}
+	$sampleCount = $sampleCount * $factor;
+      }
+      for ($i = 0; $i < scalar(@sampleVector); $i++) {
+	@truextonCount[int(@sampleVector[$i])]++;
+      }
+      
+      $unitsLeft = $sampleCount;
+      undef(%picked);
+      $sampled = 0;
+      $unique = 0;
+      $modelUnique = 0;
+      $chao1Unique = 0;
+      $ichao1Unique = 0;
+      $ACEUnique = 0;
+      $unknownSampled = 0;
+      $otherCount = 0;
+      $missedCount = 0;
+      undef @xtonCount;
+      undef @sampledCounts;
+      undef @picked_numbers;
+      for ($i = 0; $i < $sampleCount; $i++) {
+	@picked_numbers[$i] = $i;
+      }
+
+      while ($unitsLeft > 0) {
+
+	if ($debug == 1) {
+	  print STDERR "Iteration $r of $R. Sampled $sampled units. $unitsLeft units left.\n";
+	}
+
+	$urndnum = int(rand($unitsLeft));
+	$rndnum = @picked_numbers[$urndnum];
+	splice(@picked_numbers, $urndnum, 1);
+	#$unitsLeft--;
+
+#	$rndnum = int(rand($sampleCount));
+	$passed = 0;
+	$exited = 0;
+	for ($rnd = 0; $rnd < scalar(@abundances); $rnd++) {
+	  $passed = $passed + @abundances[$rnd];
+	  if ($passed > $rndnum) {
+	    if (@sampleVector[$rnd] > 0) {
+	      $exited = 1;
+	      last;
+	    } else {
+	      $missedCount++;
+	    }
+	  }
+	}
+	if ($exited == 0) {
+	  #print $r . "\t" . $rndnum . "\t" . "NA" . "\t" . $passed . "\t" . $missedCount . "\t" . $unitsLeft . "\n";
+	  next;
+	}
+	#print $r . "\t" . ($sampleCount - $unitsLeft) . "\t" . $rndnum . "\t" . $rnd . "\t" . $passed . "\t" . $missedCount . "\t" . $unitsLeft . "\n";
+	$unit_name = @unitNames[$rnd];
+	if (@sampleVector[$rnd] > 0) {
+	  if (($unit_name =~ m/^$currentType/) || ($currentType eq "All") || ($unit_name eq "Unknown $currentType") || ($unit_name eq "Unknown")) {
+	    $sampled++;
+	    @sampleVector[$rnd]--;
+	    $unitsLeft--;
+	    $tax_levels = split(';', $unit_name);
+	    @xtonCount[@sampledCounts[$rnd]]--;
+	    @sampledCounts[$rnd]++;
+	    @xtonCount[@sampledCounts[$rnd]]++;
+	    if (defined($picked{"$unit_name"})) {
+	      @resultVector[$sampled] = @resultVector[$sampled] + $unique;
+	      @modelVector[$sampled] = @modelVector[$sampled] + $modelUnique;
+
+	      if (($abund_model =~ m/chao/) || ($abund_model =~ m/all/)) {
+		if (@xtonCount[2] > 0) {
+		  $chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*@xtonCount[1])/(2*@xtonCount[2]));
+		} else {
+		  $chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*(@xtonCount[1]-1))/(@xtonCount[2]+1));
+		}
+		@chao1Vector[$sampled] = @chao1Vector[$sampled] + $unique + $chao1;
+		if (@xtonCount[4] > 0) {
+		  $ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(2*@xtonCount[4]));
+		  if ($ichao1max > 0) {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(4*@xtonCount[4])) * $ichao1max);
+		  } else {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		  }
+		} else {
+		  $ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(@xtonCount[4]+1));
+		  if ($ichao1max > 0) {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(@xtonCount[4]+1)) * $ichao1max);
+		  } else {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		  }
+		}
+	      }
+
+	      if (($abund_model =~ m/ace/) || ($abund_model =~ m/all/)) {
+		$aceSrare = 0;
+		$aceXrare = 0;
+		for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		  $aceSrare = $aceSrare + @xtonCount[$acek];
+		  $aceXrare = $aceXrare + @xtonCount[$acek] * $acek;
+		}
+		if ($aceXrare > 0) {
+		  $acecov = 1 - @xtonCount[1] / $aceXrare;
+		} else {
+		  $acecov = 0;
+		}
+		$aceA = 0;
+		$aceB = 0;
+		$aceC = 0;
+		for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		  $aceA = $aceA + $acek * ($acek - 1) * @xtonCount[$acek];
+		  $aceB = $aceB + $acek * @xtonCount[$acek];
+		  $aceC = $aceC + $acek * @xtonCount[$acek] - 1;
+		}
+		if (($acecov > 0) && ($aceB > 0) && ($aceC > 0)) {
+		  $acevar = ($aceSrare / $acecov) * ($aceA / ($aceB * $aceC)) - 1;
+		} else {
+		  $acevar = 0;
+		}
+		if ($acevar <= 0) {
+		  $acevar = 0;
+		}
+		if ($acecov > 0) {
+		  $aceest = ($aceSrare / $acecov) + (@xtonCount[1] / $acecov * $acevar) - $aceSrare;
+		} else {
+		  $aceest = 0;
+		}
+		@aceVector[$sampled] = @aceVector[$sampled] + $unique + $aceest;
+	      }
+	    
+	      @unknownVector[$sampled] = @unknownVector[$sampled] + $unique + $unknownSampled;
+	    } else {
+	      $picked{"$unit_name"} = 1;
+	      $unique++;
+	      $modelUnique = $modelUnique + 1 + $unknownSampled * $unknownCount / $sampleCount;
+
+	      @resultVector[$sampled] = @resultVector[$sampled] + $unique;
+	      @modelVector[$sampled] = @modelVector[$sampled] + $modelUnique;
+	      
+	      if (($abund_model =~ m/chao/) || ($abund_model =~ m/all/)) {
+		if (@xtonCount[2] > 0) {
+		  $chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*@xtonCount[1])/(2*@xtonCount[2]));
+		} else {
+		  $chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*(@xtonCount[1]-1))/(@xtonCount[2]+1));
+		}
+		@chao1Vector[$sampled] = @chao1Vector[$sampled] + $unique + $chao1;
+		if (@xtonCount[4] > 0) {
+		  $ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(2*@xtonCount[4]));
+		  if ($ichao1max > 0) {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(4*@xtonCount[4])) * $ichao1max);
+		  } else {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		  }
+		} else {
+		  $ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(@xtonCount[4]+1));
+		  if ($ichao1max > 0) {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(@xtonCount[4]+1)) * $ichao1max);
+		  } else {
+		    @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		  }
+		}
+	      }
+
+	      if (($abund_model =~ m/ace/) || ($abund_model =~ m/all/)) {
+		$aceSrare = 0;
+		$aceXrare = 0;
+		for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		  $aceSrare = $aceSrare + @xtonCount[$acek];
+		  $aceXrare = $aceXrare + @xtonCount[$acek] * $acek;
+		}
+		if ($aceXrare > 0) {
+		  $acecov = 1 - @xtonCount[1] / $aceXrare;
+		} else {
+		  $acecov = 0;
+		}
+		$aceA = 0;
+		$aceB = 0;
+		$aceC = 0;
+		for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		  $aceA = $aceA + $acek * ($acek - 1) * @xtonCount[$acek];
+		  $aceB = $aceB + $acek * @xtonCount[$acek];
+		  $aceC = $aceC + $acek * @xtonCount[$acek] - 1;
+		}
+		if (($acecov > 0) && ($aceB > 0) && ($aceC > 0)) {
+		  $acevar = ($aceSrare / $acecov) * ($aceA / ($aceB * $aceC)) - 1;
+		} else {
+		  $acevar = 0;
+		}
+		if ($acevar <= 0) {
+		  $acevar = 0;
+		}
+		if ($acecov > 0) {
+		  $aceest = ($aceSrare / $acecov) + (@xtonCount[1] / $acecov * $acevar) - $aceSrare;
+		} else {
+		  $aceest = 0;
+		}
+		@aceVector[$sampled] = @aceVector[$sampled] + $unique + $aceest;
+	      }
+
+	      @unknownVector[$sampled] = @unknownVector[$sampled] + $unique + $unknownSampled;
+	    }
+	    if (($unit_name =~ m/Unclassified/) || ($unit_name =~ m/Unknown $currentType/) || ($unit_name eq "Unknown")) {
+	      $unknownSampled++;
+	      #@unknownVector[$sampled] = @unknownVector[$sampled] + $unknownSampled;
+	    }
+	    
+	    if ($out_samp == 1) {
+	      if (int(($sampled) / $W) eq (($sampled) / $W)) {
+		## Get per unit counts
+		for ($u = 0; $u < scalar(@unitNames); $u++) {
+		  @sampledUnits[$u] = @abundances[$u] - @sampleVector[$u];
+		  if (defined($sampledPerUnit{"$u.$sampled"})) {
+		    $sampledPerUnit{"$u.$sampled"} = $sampledPerUnit{"$u.$sampled"} + @sampledUnits[$u];
+		    if (@sampledUnits[$u] > $maxPerUnit{"$u.$sampled"}) {
+		      $maxPerUnit{"$u.$sampled"} = @sampledUnits[$u];
+		    }
+		    if (@sampledUnits[$u] < $minPerUnit{"$u.$sampled"}) {
+		    $minPerUnit{"$u.$sampled"} = @sampledUnits[$u];
+		  }
+		  } else {
+		    $sampledPerUnit{"$u.$sampled"} = @sampledUnits[$u];
+		    $maxPerUnit{"$u.$sampled"} = @sampledUnits[$u];
+		    $minPerUnit{"$u.$sampled"} = @sampledUnits[$u];
+		  }
+		}
+	      }
+	    }
+	  } else {
+	    $sampled++;
+	    @sampleVector[$rnd]--;
+	    $unitsLeft--;
+	    $otherCount++;
+	    @xtonCount[@sampledCounts[$rnd]]--;
+	    @sampledCounts[$rnd]++;
+	    @xtonCount[@sampledCounts[$rnd]]++;
+
+	    @resultVector[$sampled] = @resultVector[$sampled] + $unique;
+	    @modelVector[$sampled] = @modelVector[$sampled] + $modelUnique;
+
+	    if (($abund_model =~ m/chao/) || ($abund_model =~ m/all/)) {
+	      if (@xtonCount[2] > 0) {
+		$chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*@xtonCount[1])/(2*@xtonCount[2]));
+	      } else {
+		$chao1 = (($sampled - 1)/$sampled)*((@xtonCount[1]*(@xtonCount[1]-1))/(@xtonCount[2]+1));
+	      }
+	      @chao1Vector[$sampled] = @chao1Vector[$sampled] + $unique + $chao1;
+	      if (@xtonCount[4] > 0) {
+		$ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(2*@xtonCount[4]));
+		if ($ichao1max > 0) {
+		  @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(4*@xtonCount[4])) * $ichao1max);
+		} else {
+		  @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		}
+	      } else {
+		$ichao1max = @xtonCount[1] - ((@xtonCount[2]*@xtonCount[3])/(@xtonCount[4]+1));
+		if ($ichao1max > 0) {
+		  @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1 + ((@xtonCount[3]/(@xtonCount[4]+1)) * $ichao1max);
+		} else {
+		  @ichao1Vector[$sampled] = @ichao1Vector[$sampled] + $unique + $chao1;
+		}
+	      }
+	    }
+	    
+	    if (($abund_model =~ m/ace/) || ($abund_model =~ m/all/)) {
+	      $aceSrare = 0;
+	      $aceXrare = 0;
+	      for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		$aceSrare = $aceSrare + @xtonCount[$acek];
+		$aceXrare = $aceXrare + @xtonCount[$acek] * $acek;
+	      }
+	      if ($aceXrare > 0) {
+		$acecov = 1 - @xtonCount[1] / $aceXrare;
+	      } else {
+		$acecov = 0;
+	      }
+	      $aceA = 0;
+	      $aceB = 0;
+	      $aceC = 0;
+	      for ($acek = 1; $acek <= $ace_rare; $acek++) {
+		$aceA = $aceA + $acek * ($acek - 1) * @xtonCount[$acek];
+		$aceB = $aceB + $acek * @xtonCount[$acek];
+		$aceC = $aceC + $acek * @xtonCount[$acek] - 1;
+	      }
+	      if (($acecov > 0) && ($aceB > 0) && ($aceC > 0)) {
+		$acevar = ($aceSrare / $acecov) * ($aceA / ($aceB * $aceC)) - 1;
+	      } else {
+		$acevar = 0;
+	      }
+	      if ($acevar <= 0) {
+		$acevar = 0;
+	      }
+	      if ($acecov > 0) {
+		$aceest = ($aceSrare / $acecov) + (@xtonCount[1] / $acecov * $acevar) - $aceSrare;
+	      } else {
+		$aceest = 0;
+	      }
+	      @aceVector[$sampled] = @aceVector[$sampled] + $unique + $aceest;
+	    }
+	    
+	    @unknownVector[$sampled] = @unknownVector[$sampled] + $unique + $unknownSampled;
+	  }
+	} else {
+	  next;
+	}
+	if (($sampled >= $scale) && ($scale > 0)) {
+	  last;
+	}
+      }
+    }
+
+    if ($verbose == 1) {
+      print STDERR "Done.\n";
+    }
+
+    for ($i = 1; $i <= $maxSize; $i++) {
+      if ($i >= $sampleCount) {
+	if ($abund_model =~ m/b-p/) {
+	  @output[$i] = @modelVector[$sampleCount] / $R . "\t" . @resultVector[$sampleCount] / $R . "\t" . @unknownVector[$sampleCount] / $R;
+	}
+	if ($abund_model =~ m/^chao/) {
+	  @output[$i] = @chao1Vector[$sampleCount] / $R . "\t" . @resultVector[$sampleCount] / $R . "\t" . @unknownVector[$sampleCount] / $R;
+	}
+	if ($abund_model =~ m/ichao/) {
+	  @output[$i] = @ichao1Vector[$sampleCount] / $R . "\t" . @resultVector[$sampleCount] / $R . "\t" . @unknownVector[$sampleCount] / $R;
+	}
+	if ($abund_model =~ m/ace/) {
+	  @output[$i] = @aceVector[$sampleCount] / $R . "\t" . @resultVector[$sampleCount] / $R . "\t" . @unknownVector[$sampleCount] / $R;
+	}
+	if ($abund_model =~ m/all/) {
+	  @output[$i] = @modelVector[$sampleCount] / $R . "\t" . @chao1Vector[$sampleCount] / $R . "\t" . @ichao1Vector[$sampleCount] / $R . "\t" . @aceVector[$sampleCount] / $R . "\t" . @resultVector[$sampleCount] / $R . "\t" . @unknownVector[$sampleCount] / $R;
+	}
+      } else {
+	if ($abund_model =~ m/b-p/) {
+	  @output[$i] = @modelVector[$i] / $R . "\t" . @resultVector[$i] / $R . "\t" . @unknownVector[$i] / $R;
+	}
+	if ($abund_model =~ m/^chao/) {
+	  @output[$i] = @chao1Vector[$i] / $R . "\t" . @resultVector[$i] / $R . "\t" . @unknownVector[$i] / $R;
+	}
+	if ($abund_model =~ m/ichao/) {
+	  @output[$i] = @ichao1Vector[$i] / $R . "\t" . @resultVector[$i] / $R . "\t" . @unknownVector[$i] / $R;
+	}
+	if ($abund_model =~ m/ace/) {
+	  @output[$i] = @aceVector[$i] / $R . "\t" . @resultVector[$i] / $R . "\t" . @unknownVector[$i] / $R;
+	}
+	if ($abund_model =~ m/all/) {
+	  @output[$i] = @modelVector[$i] / $R . "\t" . @chao1Vector[$i] / $R . "\t" . @ichao1Vector[$i] / $R . "\t" . @aceVector[$i] / $R . "\t" . @resultVector[$i] / $R . "\t" . @unknownVector[$i] / $R;
+	}
+      }
+    }
+
+    #print $sampled ."\n";
+
+    if ($verbose == 1) {
+      $now = localtime;
+      print STDERR "$now : Writing output for $currentType, level $level ...\n";
+    }
+
+    $end = $sampled;
+    if ($out_samp == 1) {
+      for ($sampled = 0; $sampled <= $end; $sampled++) {
+	if (int(($sampled) / $W) eq (($sampled) / $W)) {
+	  print SAMP $sampled;
+	  print MAX $sampled;
+	  print MIN $sampled;
+	  for ($u = 0; $u < scalar(@unitNames); $u++) {
+	    $unit_name = @unitNames[$u];
+	    if (($unit_name =~ m/^$currentType/) || ($currentType eq "All") || ($unit_name eq "Unknown $currentType") || ($unit_name eq "Unknown")) {
+	      print SAMP "\t" . $sampledPerUnit{"$u.$sampled"} / $R;
+	      print MAX "\t" . $maxPerUnit{"$u.$sampled"};
+	      print MIN "\t" . $minPerUnit{"$u.$sampled"};
+	    }
+	  }
+	  print SAMP "\n";
+	  print MAX "\n";
+	  print MIN "\n";
+	}
+      }
+      close SAMP;
+      close MAX;
+      close MIN;
+    }
+
+    ## Output rarefaction data
+    if ($out_sep == 1) {
+      $i = 0;
+      if ($currentType eq "Archaea") {
+	foreach $line (@output) {
+	  print ARCH $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+      if ($currentType eq "Bacteria") {
+	foreach $line (@output) {
+	  print BACT $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+      if ($currentType eq "Eukaryota") {
+	foreach $line (@output) {
+	  print EUK $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+      if ($currentType eq "Chloroplast") {
+	foreach $line (@output) {
+	  print CHLORO $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+      if ($currentType eq "Mitochondria") {
+	foreach $line (@output) {
+	  print MITO $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+    } else {
+      if ($currentType eq "All") {
+	foreach $line (@output) {
+	  print ALL $i . "\t" . $line . "\n";
+	  $i++;
+	}
+      }
+    }
+  }
+
+  if ($out_lists == 1) {  # If list output is on
+    foreach $taxkey (sort(keys(%taxa))) {
+      print LIST $taxkey . "\t" . $taxa{$taxkey} . "\n";
+    }
+  }
+  
+  if ($out_sum == 1) {   # If summary output is on
+    print SUMMARY "  Number of taxa:        \t" . scalar(keys(%taxa)) . "\n";   # Output progress
+    print SUMMARY "  Number of unclassified:\t" . $unclassed . "\n";   # Output progress
+    print SUMMARY "  Mean group size:       \t" . scalar(@entries) / scalar(keys(%taxa)) . "\n";   # Output progress
+  }
+
+  if ($out_sep == 1) {  # If output should be separated, close files
+    close (ARCH);
+    close (BACT);
+    close (EUK);
+    close (CHLORO);
+    close (MITO);
+  } else {
+    close (ALL);
+  }
+  
+}
+
+
+## Finish and write summary and close files
+$now = localtime;
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "MetaxaQR_rf run ended at $now.\n";   # Output the starting time for the analysis
+  close SUMMARY;
+}
+
+if ($verbose == 1) {
+  $now = localtime;
+  print STDERR "$now : Finished!\n";
+}

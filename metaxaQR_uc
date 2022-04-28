@@ -1,0 +1,1105 @@
+#!/usr/bin/perl
+# Metaxa 3.0
+$app_title     = "MetaxaQR Diversity Tools - Uniqueness of Community Analyzer";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"   MetaxaQR -- Uniqueness of Community Analyzer\
+    Copyright (C) 2015-2018 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- None\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+
+$usage = "\
+-i {file} : Input count table (e.g. derived from metaxaQR_dc)\
+-o {file} : Base for the names of output file(s)\
+-g {file,string,auto,none,all} : A file or string describing the sample group division,\
+                             or 'auto' if the groups should be guessed from sample names,\
+                             or 'none' if all samples should be treated individually,\
+                             or 'all' if all samples should be treated as they come from the same group, default = 'all'\
+
+-r {value} : Number of resampling rounds for each sample, default = 10000\
+-s {value,min} : Number of entries sampled in each resampling round for each sample, 'min' will set this number to the number of entries in the smallest sample, default = 1000\
+-c {string} : Sample to compare to, leave blank to compare to all samples, use 'groups' to compare groups instead of samples, default is blank\
+-w {value} : Within-sample variation cutoff to compare to (proportion of all resampling values included), default = 0.99\
+-m {empirical,average,model} : Resampling model to use, default = model\
+                               Empirical uses the empirical distribution from each sample within the group, which gives large variance (not statistical good-practice)\
+                               Average assumes that all samples are drawn directly from the group average, which gives very small variance (unrealistic)\
+                               Model assumes a model that take sample variation into account when drawing from the group average, which gives very variance (more realistic)\
+-d {bray,jaccard,euclidean} : Distance/dissimilarity measure to use when comparing samples and groups, default = bray\
+--binary {T or F} : Use presence/absence for distance/dissimilarity rather than taking abundances into account, off (F) by default\
+--filter {value} : Filter out abundance values below this cutoff, default = 0\
+
+--summary {T or F} : Outputs a readable summary file of the results, on (T) by default\
+--table {T or F} : Outputs a tab-separated table of the results, off (F) by default\
+--matrix {T or F} : Outputs a results in a matrix format, off (F) by default\
+--resampling_table {T or F} : Outputs the resampling table (can be huge), off (F) by default\
+
+-h : displays short usage information\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of MetaxaQR\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+$counts = "";
+$output = "metaxaQR_uc_out";
+$groups = "all";
+$resamples = 10000;
+$samples = 1000;
+$compare_to = "";
+$self_confidence = 0.99;
+$use = "model";
+$measure = "bray";
+$binary = 0;
+$filter = 0;
+$out_sum = 1;
+$out_matrix = 0;
+$out_rtable = 0;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input file from -i flag
+    $i++;
+    $counts = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+  if ($arg eq "-g") {   # Read group from -g flag
+    $i++;
+    $groups = @ARGV[$i];
+  }
+  if ($arg eq "-r") {   # Read number of resamples from -r flag
+    $i++;
+    $resamples = @ARGV[$i];
+  }
+  if ($arg eq "-s") {   # Read number of samples from -s flag
+    $i++;
+    $samples = @ARGV[$i];
+  }
+  if ($arg eq "-c") {   # Read sample to compare to from -c flag
+    $i++;
+    $compare_to = @ARGV[$i];
+  }
+  if ($arg eq "-w") {   # Read within sample cutoff from -w flag
+    $i++;
+    $self_confidence = @ARGV[$i];
+  }
+  if ($arg eq "-m") {   # Read model type from -m flag
+    $i++;
+    $use = @ARGV[$i];
+  }
+  if ($arg eq "-d") {   # Read dissimilarity measure type from -d flag
+    $i++;
+    $measure = @ARGV[$i];
+  }
+ if ($arg eq "--filter") {   # Read filter cutoff from --filter flag
+    $i++;
+    $filter = @ARGV[$i];
+  }
+  if ($arg eq "--binary") {   # Set binary/non-binary distances
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $binary = 0;
+    } else {
+      $binary = 1;
+    }
+  }
+
+  if ($arg eq "--summary") {   # Set summary output
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_sum = 0;
+    } else {
+      $out_sum = 1;
+    }
+  }
+  if ($arg eq "--table") {   # Set table output
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_table = 0;
+    } else {
+      $out_table = 1;
+    }
+  }
+  if ($arg eq "--matrix") {   # Set matrix output
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_matrix = 0;
+    } else {
+      $out_matrix = 1;
+    }
+  }
+  if ($arg eq "--resampling_table") {   # Set resampling table output
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $out_rtable = 0;
+    } else {
+      $out_rtable = 1;
+    }
+  }
+
+#  if ($arg eq "--save_raw") {   # Determine whether or not to save all the raw intermediate data based on the --save_raw flag
+#    $i++;
+#    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+#      $save_raw = 1;
+#    } else {
+#      $save_raw = 0;
+#    }
+#  }
+
+  ## If "-h" is among the options, output short usage data and options
+  if ($arg eq "-h") {
+    print "Usage: metaxaQR_uc -i <input file> -o <output file>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--help" is among the options, output usage data and all options
+  if ($arg eq "--help") {
+    print "Usage: metaxaQR_uc -i <input file> -o <output file>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  if ($arg eq "--debug") {   # Run MetaxaQR in debug mode
+    $debug = 1;
+  }
+}
+
+if ($groups eq "none") {
+  $groups = "<>none<>";
+}
+if ($groups eq "auto") {
+  $groups = "<>auto<>";
+}
+if ($groups eq "all") {
+  $groups = "<>all<>";
+}
+
+
+if (substr($groups,0,2) ne "<>") {
+  $groupfile = `ls $groups`;
+
+  if ($groupfile eq "") {
+    ## Read group division (groupname:samplename1,samplename2;groupname2:samplename3,samplename4)
+    
+    @groups = split(';', $groups);
+    foreach $group (@groups) {
+      ($groupname, $members) = split(':', $group);
+      push(@groupnames, $groupname);
+      @members = split(',',$members);
+      foreach $member (@members) {
+	$groups{$member} = $groupname;
+	$membercount{$groupname}++;
+	$membercount{"_all_"}++;
+      }
+    }
+  } else {
+    ## Read group division from file
+    open (GROUPS, $groups);
+    while ($line = <GROUPS>) {
+      chomp($line);
+      push(@groups, $line);
+    }
+    close GROUPS;
+    foreach $group (@groups) {
+      @members = split('\t',$group);
+      $groupname = $members[0];
+      push(@groupnames, $groupname);
+      shift(@members);
+      foreach $member (@members) {
+	$groups{$member} = $groupname;
+	$membercount{$groupname}++;
+	$membercount{"_all_"}++;
+      }
+    }
+  }
+}
+
+push(@groupnames,"_all_");
+
+## Read counts files
+
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Reading input file...\n";
+}
+
+open (COUNTS, "tr '\r' '\n' < $counts |");
+$line = <COUNTS>;
+chomp($line);
+@samplenames = split('\t', $line);
+
+while ($line = <COUNTS>) {
+  chomp($line);
+  @line = split('\t', $line);
+  $tax = @line[0];
+  $taxa{$tax} = 1;
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    if ($line[$c] > $filter) {
+      $table{"$samplename\t$tax"} = $line[$c];
+    } else {
+      $table{"$samplename\t$tax"} = 0;
+    }
+#    $group = $groups{$samplename};
+#    $grouptable{"$group\t$tax"} = $grouptable{"$group\t$tax"} + $line[$c];
+#    $grouptable{"_all_\t$tax"} = $grouptable{"_all_\t$tax"} + $line[$c];
+
+    if ($groups eq "<>auto<>") {
+      $groupname = $samplename;
+      $groupname =~ s/[0-9][0-9]*.*//;
+      $groupnames{$groupname} = 1;
+      $groups{$samplename} = $groupname;
+      if (not(defined($addedSamples{$samplename}))) {
+	$membercount{$groupname}++;
+	$membercount{"_all_"}++;
+      }
+      $addedSamples{$samplename} = 1;
+    }
+    if ($groups eq "<>none<>") {
+      $groupname = $samplename;
+      $groupnames{$groupname} = 1;
+      $groups{$samplename} = $groupname;
+      if (not(defined($addedSamples{$samplename}))) {
+	$membercount{$groupname}++;
+	$membercount{"_all_"}++;
+      }
+      $addedSamples{$samplename} = 1;
+    }
+    if ($groups eq "<>all<>") {
+      if (not(defined($addedSamples{$samplename}))) {
+	$membercount{"_all_"}++;
+      }
+      $addedSamples{$samplename} = 1;
+    }
+  } 
+}
+
+if (substr($groups,0,2) eq "<>") {
+  @groupnames = sort(keys(%groupnames));
+  if ($groups eq "<>auto<>") {
+    print STDERR "Defined groups:\t";
+    foreach $name (@groupnames) {
+      print STDERR "$name  ";
+    }
+    print STDERR "\n";
+  }
+  push(@groupnames,"_all_");
+}
+
+
+@taxa = keys(%taxa);
+
+close COUNTS;
+
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Normalizing data...\n";
+}
+
+## Calculate sums for each sample
+for ($t = 0; $t < scalar(@taxa); $t++) {
+  $taxname = $taxa[$t];
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    $sums{$samplename} = $sums{$samplename} + $table{"$samplename\t$taxname"};
+  }
+}
+
+$minsampsize = 0;
+
+## Normalize group counts across samples of unequal size
+for ($t = 0; $t < scalar(@taxa); $t++) {
+  $taxname = $taxa[$t];
+
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    $group = $groups{$samplename};
+    if ($sums{$samplename} == 0) {
+      $grouptable{"$group\t$taxname"} = $grouptable{"$group\t$taxname"};
+      $grouptable{"_all_\t$taxname"} = $grouptable{"_all_\t$taxname"};
+    } else {
+      $grouptable{"$group\t$taxname"} = $grouptable{"$group\t$taxname"} + $table{"$samplename\t$taxname"} / $sums{$samplename};
+      $grouptable{"_all_\t$taxname"} = $grouptable{"_all_\t$taxname"} + $table{"$samplename\t$taxname"} / $sums{$samplename};
+    }
+    
+    if ($sums{$samplename} > $minsampsize) {
+      $minsampsize = $sums{$samplename};
+    }
+
+  }
+  foreach $group (@groupnames) {
+    if ($membercount{$group} > 0) {
+      $grouptable{"$group\t$taxname"} = $grouptable{"$group\t$taxname"} / $membercount{$group};
+    } else {
+      $grouptable{"$group\t$taxname"} = 0;
+    }
+  }
+
+  if (lc(substr($use, 0, 1)) eq "m") {
+    for ($c = 1; $c < scalar(@samplenames); $c++) {
+      $samplename = $samplenames[$c];
+      $group = $groups{$samplename};
+      if ($sums{$samplename} == 0) {
+	$vartable{"$group\t$taxname"} = $vartable{"$group\t$taxname"};
+	$vartable{"_all_\t$taxname"} = $vartable{"_all_\t$taxname"};
+      } else {
+	$vartable{"$group\t$taxname"} = $vartable{"$group\t$taxname"} + ($table{"$samplename\t$taxname"} / $sums{$samplename} - $grouptable{"$group\t$taxname"}) ** 2;
+	$vartable{"_all_\t$taxname"} = $vartable{"_all_\t$taxname"} + ($table{"$samplename\t$taxname"} / $sums{$samplename} - $grouptable{"$group\t$taxname"}) ** 2;
+      }
+    }
+    foreach $group (@groupnames) {
+      if ($membercount{$group} > 0) {
+	$vartable{"$group\t$taxname"} = $vartable{"$group\t$taxname"} / $membercount{$group};
+      } else {
+	$vartable{"$group\t$taxname"} = 0;
+      }
+    }
+  }
+}
+
+if (lc($samples) eq "min") {
+  $samples = $minsampsize;
+}
+
+## Calculate sums for each group
+for ($t = 0; $t < scalar(@taxa); $t++) {
+  $taxname = $taxa[$t];
+  foreach $group (@groupnames) {
+    $sums{$group} = $sums{$group} + $grouptable{"$group\t$taxname"};
+  }
+}
+
+## Normalize counts for each sample and group
+for ($t = 0; $t < scalar(@taxa); $t++) {
+  $taxname = $taxa[$t];
+
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    if ($sums{$samplename} > 0) {
+      $normtable{"$samplename\t$taxname"} = $totals{$samplename} + $table{"$samplename\t$taxname"} / $sums{$samplename};
+      $totals{$samplename} = $totals{$samplename} + $table{"$samplename\t$taxname"} / $sums{$samplename};
+    } else {
+      $normtable{"$samplename\t$taxname"} = 0;
+      $totals{$samplename} = 0;
+    }
+  }
+
+  foreach $group (@groupnames) {
+    if ($sums{$group} > 0) {
+      $normgrouptable{"$group\t$taxname"} = $totals{$group} + $grouptable{"$group\t$taxname"} / $sums{$group};
+      if ($compare_to eq "groups") {
+	$table{"$group.S\t$taxname"} = $grouptable{"$group\t$taxname"};
+	$normtable{"$group.S\t$taxname"} = $totals{$group} + $grouptable{"$group\t$taxname"} / $sums{$group};
+	$sums{"$group.S"} = $sums{$group};
+      }
+      $totals{$group} = $totals{$group} + $grouptable{"$group\t$taxname"} / $sums{$group};
+    } else {
+      $normgrouptable{"$group\t$taxname"} = 0;
+      if ($compare_to eq "groups") {
+	$table{"$group.S\t$taxname"} = 0;
+	$normtable{"$group.S\t$taxname"} = 0;
+	$sums{"$group.S"} = 0;
+      }
+      $totals{$group} = 0;
+    }
+  }
+
+#  $normgrouptable{"_all_\t$taxname"} = $totals{"_all_"} + $grouptable{"_all_\t$taxname"} / $sums{"_all_"};
+#  $totals{"_all_"} = $totals{"_all_"} + $grouptable{"_all_\t$taxname"} / $sums{"_all_"};
+#  print $taxname . "\t" . $normgrouptable{"_all_\t$taxname"} . "\t" . $totals{"_all_"} . "\n";
+}
+
+if ($compare_to eq "groups") {
+  undef @samplenames;
+  @samplenames[0] = "";
+  foreach $groupname (@groupnames) {
+    push(@samplenames, "$groupname.S");
+    $groups{"$groupname.S"} = $groupname;
+  }
+  $compare_to = "";
+}
+
+
+if (lc(substr($use,0,1)) eq "a") {
+  ## Resample the groups
+
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-sampling groups, by group mean...\n";
+  }
+  
+  #for ($c = 1; $c < scalar(@samplenames); $c++) {
+  for ($g = 0; $g < scalar(@groupnames); $g++) {
+    $group = $groupnames[$g];
+    print STDERR "$group ... ";
+    for ($r = 0; $r < $resamples; $r++) {
+      for ($s = 0; $s < $samples; $s++) {
+	$rnd = rand();
+	#      print $rnd . "\n";
+	for ($t = 0; $t < scalar(@taxa); $t++) {
+	  $taxname = $taxa[$t];
+	  #	print $group . "\t" . $taxname . "\t" . $normgrouptable{"$group\t$taxname"} . "\n";
+	  if ($rnd <= $normgrouptable{"$group\t$taxname"}) {
+	    $results{"$group.$r.$taxname"} = $results{"$group.$r.$taxname"} + 1;
+	    last;
+	  }
+	}
+      }
+    }
+  }
+  print STDERR "\n";
+}
+
+if (lc(substr($use,0,1)) eq "e") {
+  ## Resample the samples
+
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-sampling groups, by samples...\n";
+  }
+  
+  $l = 0;
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    $group = $groups{$samplename};
+    print STDERR "$samplename ($group) ... ";
+    if (not(defined($in_group{$group}))) {
+      $in_group{$group} = 0;
+    }
+    for ($r = $in_group{$group}; $r < $resamples; $r = $r + $membercount{$group}) {
+      for ($s = 0; $s < $samples; $s++) {
+	$rnd = rand();
+	#      print $rnd . "\n";
+	for ($t = 0; $t < scalar(@taxa); $t++) {
+	  $taxname = $taxa[$t];
+	  #	print $group . "\t" . $taxname . "\t" . $normgrouptable{"$group\t$taxname"} . "\n";
+	  if ($rnd <= $normtable{"$samplename\t$taxname"}) {
+	    $results{"$group.$r.$taxname"} = $results{"$group.$r.$taxname"} + 1;
+	    last;
+	  }
+	}
+      }
+    }
+    $in_group{$group}++;
+
+    for ($r = $l; $r <= int($resamples * $c / (scalar(@samplenames) - 1) + 1); $r++) {
+      for ($s = 0; $s < $samples; $s++) {
+	$rnd = rand();
+
+	for ($t = 0; $t < scalar(@taxa); $t++) {
+	  $taxname = $taxa[$t];
+
+	  if ($rnd <= $normtable{"$samplename\t$taxname"}) {
+	    $results{"_all_.$r.$taxname"} = $results{"_all_.$r.$taxname"} + 1;
+	    last;
+	  }
+	}
+      }
+    }
+    $l = $r;
+  }
+  print STDERR "\n";
+}
+
+if (lc(substr($use,0,1)) eq "m") {
+  ## Resample the groups, by using a variance-aware model
+
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-sampling groups, using a variance-aware model...\n";
+  }
+  
+  #for ($c = 1; $c < scalar(@samplenames); $c++) {
+  for ($g = 0; $g < scalar(@groupnames); $g++) {
+    $group = $groupnames[$g];
+    print STDERR "$group ... ";
+    for ($r = 0; $r < $resamples; $r++) {
+
+      foreach $group (@groupnames) {  ## Reset vtotals for this iteration
+	$vtotals{$group} = 0;
+      }
+
+      for ($t = 0; $t < scalar(@taxa); $t++) {  ## Recreate group tables accounting for variance
+	$taxname = $taxa[$t];
+	foreach $group (@groupnames) {
+	  if ($sums{$group} > 0) {
+	    #$vnormgrouptable{"$group\t$taxname"} = $vtotals{$group} + ($grouptable{"$group\t$taxname"} / $sums{$group}) + (rand() * 2 * (sqrt($vartable{"$group\t$taxname"}) * 2 - sqrt($vartable{"$group\t$taxname"})));
+	    $vnormgrouptable{"$group\t$taxname"} = $vtotals{$group} + ($grouptable{"$group\t$taxname"} / $sums{$group}) + (rand() * 2 - 1) * (sqrt($vartable{"$group\t$taxname"}) * 2);
+	  } else {
+	    #$vnormgrouptable{"$group\t$taxname"} = $vtotals{$group} + (rand() * 2 * (sqrt($vartable{"$group\t$taxname"}) * 2 - sqrt($vartable{"$group\t$taxname"})));
+	    $vnormgrouptable{"$group\t$taxname"} = $vtotals{$group} + (rand() * 2 - 1) * (sqrt($vartable{"$group\t$taxname"}) * 2);
+	  }
+	  $vtotals{$group} = $vnormgrouptable{"$group\t$taxname"};
+	}
+      }
+
+      for ($t = 0; $t < scalar(@taxa); $t++) {  ## Rescale group table to 0-1 scale
+	$taxname = $taxa[$t];
+	foreach $group (@groupnames) {
+	  if ($vtotals{$group} > 0) {
+	    $vnormgrouptable{"$group\t$taxname"} = $vnormgrouptable{"$group\t$taxname"} / $vtotals{$group};
+	  } else {
+	    $vnormgrouptable{"$group\t$taxname"} = 0;
+	  }
+	}
+      }
+
+      for ($s = 0; $s < $samples; $s++) {
+	$rnd = rand();
+	#      print $rnd . "\n";
+	for ($t = 0; $t < scalar(@taxa); $t++) {
+	  $taxname = $taxa[$t];
+	  #	print $group . "\t" . $taxname . "\t" . $vnormgrouptable{"$group\t$taxname"} . "\n";
+	  if ($rnd <= $vnormgrouptable{"$group\t$taxname"}) {
+	    $results{"$group.$r.$taxname"} = $results{"$group.$r.$taxname"} + 1;
+	    last;
+	  }
+	}
+      }
+    }
+  }
+  print STDERR "\n";
+}
+  
+## Resample the test sample(s) for estimation of "self-distance"
+
+if (substr($use, 0, 1) eq "m") {
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-sampling test samples, using a variance-aware model...\n";
+  }
+  
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    if (($samplename =~ m/$compare_to/) || ($compare_to eq "") || ($compare_to eq "all")) {
+
+      print STDERR "$samplename ... ";
+
+      $group = $groups{$samplename};
+      
+      for ($r = 0; $r < $resamples; $r++) {
+
+	## Reset vtotals for this iteration
+	$vtotal = 0;
+	
+	for ($t = 0; $t < scalar(@taxa); $t++) {  ## Recreate group tables accounting for variance
+	  $taxname = $taxa[$t];
+	  #$vnormtable{"$samplename\t$taxname"} = $vtotal + ($table{"$samplename\t$taxname"} / $sums{$samplename}) + rand() * 2 * (sqrt($vartable{"$group\t$taxname"}) * 2 - sqrt($vartable{"$group\t$taxname"}));
+	  $vnormtable{"$samplename\t$taxname"} = $vtotal + ($table{"$samplename\t$taxname"} / $sums{$samplename}) + (rand() * 2 - 1) * (sqrt($vartable{"$group\t$taxname"}) * 2);
+	  $vtotal = $vnormtable{"$samplename\t$taxname"};
+	}
+      
+	for ($t = 0; $t < scalar(@taxa); $t++) {  ## Rescale group table to 0-1 scale
+	  $taxname = $taxa[$t];
+	  $vnormtable{"$samplename\t$taxname"} = $vnormtable{"$samplename\t$taxname"} / $vtotal;
+	}
+	
+	for ($s = 0; $s < $samples; $s++) {
+	  $rnd = rand();
+	  for ($t = 0; $t < scalar(@taxa); $t++) {
+	    $taxname = $taxa[$t];
+	    if ($rnd <= $vnormtable{"$samplename\t$taxname"}) {
+	      $results{"$samplename.$r.$taxname"} = $results{"$samplename.$r.$taxname"} + 1;
+	      last;
+	    }
+	  }
+	}
+      }
+    }
+  }
+print STDERR "\n";
+
+} else {
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Re-sampling test samples...\n";
+  }
+  
+  for ($c = 1; $c < scalar(@samplenames); $c++) {
+    $samplename = $samplenames[$c];
+    if (($samplename =~ m/$compare_to/) || ($compare_to eq "") || ($compare_to eq "all")) {
+
+      print STDERR "$samplename ... ";
+      
+      for ($r = 0; $r < $resamples; $r++) {
+	for ($s = 0; $s < $samples; $s++) {
+	  $rnd = rand();
+	  for ($t = 0; $t < scalar(@taxa); $t++) {
+	    $taxname = $taxa[$t];
+	    if ($rnd <= $normtable{"$samplename\t$taxname"}) {
+	      $results{"$samplename.$r.$taxname"} = $results{"$samplename.$r.$taxname"} + 1;
+	      last;
+	    }
+	  }
+	}
+      }
+    }
+  }
+  print STDERR "\n";
+}
+  
+## Print data for R analysis
+
+
+if ($out_rtable == 1) {
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Writing re-sample tables...\n";
+  }
+
+  open (TABLE, ">$output.$resamples.table.txt");
+  for ($g = 0; $g < scalar(@groupnames); $g++) {
+    $group = $groupnames[$g];
+    for ($r = 0; $r < $resamples; $r++) {
+      print TABLE "\t$group.$r";
+    }
+  }
+  print TABLE "\n";
+  for ($t = 0; $t < scalar(@taxa); $t++) {
+    $taxname = $taxa[$t];
+    print TABLE $taxname;
+    for ($g = 0; $g < scalar(@groupnames); $g++) {
+      $group = $groupnames[$g];
+      for ($r = 0; $r < $resamples; $r++) {
+	if (defined($results{"$group.$r.$taxname"})) {
+	  print TABLE "\t" . $results{"$group.$r.$taxname"};
+	} else {
+	  print TABLE "\t0";
+	}
+      }
+    }
+    print TABLE "\n";
+  }
+  
+  close TABLE;
+}
+
+## Calculate "self-distance" in test samples
+
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Calculating variation within test samples...\n";
+}
+
+for ($c = 1; $c < scalar(@samplenames); $c++) {
+  $samplename = $samplenames[$c];
+  if (($samplename =~ m/$compare_to/) || ($compare_to eq "") || ($compare_to eq "all")) {
+    
+    undef(@distlist);
+
+    if ($debug == 1) {
+      print STDERR "$c : $samplename   Results size: " . scalar(keys(%results)) . "\n";
+    }
+    for ($r = 0; $r < $resamples; $r++) {
+      $a = 0;
+      $b = 0;
+      $A = 0;
+      $B = 0;
+      $J = 0;
+      for ($t = 0; $t < scalar(@taxa); $t++) {
+	$taxname = $taxa[$t];
+	if (not(defined($results{"$samplename.$r.$taxname"}))) {
+	  $srt_count = 0;
+	} else {
+	  $srt_count = $results{"$samplename.$r.$taxname"};
+	}
+	# "bray", "jaccard", "euclidean"
+	if (lc(substr($measure, 0, 1)) =~ m/[bj]/) {
+	  ## d[jk] = (sum abs(x[ij]-x[ik]))/(sum (x[ij]+x[ik]))
+	  if ($binary == 0) {
+	    $a = $a + abs($srt_count - int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename}));
+	    $b = $b + $srt_count + int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename});
+	    #	  print $taxname . "\t" . $results{"$samplename.$r.$taxname"} . "\t" . int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename}) . "\n";
+	  } else {
+	    # (A+B-2*J)/(A+B)
+	    if ($results{"$samplename.$r.$taxname"} * 1 > 0) {
+	      $A++;
+	    }
+	    if ($table{"$samplename\t$taxname"} * 1 > 0) {
+	      $B++;
+	    }
+	    if (($srt_count * 1 > 0) && ($table{"$samplename\t$taxname"} * 1 > 0)) {
+	      $J++;
+	    }
+	  }
+	}
+	
+	if (lc(substr($measure, 0, 1)) eq "e") {
+	  # d[jk] = sqrt(sum((x[ij]-x[ik])^2))
+	  if ($binary == 0) {
+	    $a = $a + ($srt_count - int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename})) ** 2;
+	    #	  print $taxname . "\t" . $results{"$samplename.$r.$taxname"} . "\t" . int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename}) . "\n";
+	  } else {
+	    # (A+B-2*J)/(A+B)
+	    if ($srt_count * 1 > 0) {
+	      $A++;
+	    }
+	    if ($table{"$samplename\t$taxname"} * 1 > 0) {
+	      $B++;
+	    }
+	    if (($srt_count * 1 > 0) && ($table{"$samplename\t$taxname"} * 1 > 0)) {
+	      $J++;
+	    }
+	  }
+	}
+      }
+
+      if (lc(substr($measure, 0, 1)) eq "b") { # Bray-Curtis
+	if ($binary == 0) {
+	  $dist = $a / $b;
+	} else {
+	  $dist = ($A + $B - 2 * $J) / ($A + $B);
+	}
+      }
+      if (lc(substr($measure, 0, 1)) eq "j") { # Jaccard
+	if ($binary == 0) {
+	  $dist = $a / $b;
+	} else {
+	  $dist = ($A + $B - 2 * $J) / ($A + $B);
+	}
+	$dist = 2 * $dist / (1 + $dist);
+      }
+      if (lc(substr($measure, 0, 1)) eq "e") { # Euclidean
+	if ($binary == 0) {
+	  $dist = sqrt($a);
+	} else {
+	  $dist = sqrt($A + $B - 2 * $J);
+	}
+      }
+
+
+      push(@distlist, $dist);
+    }
+    @distlist = sort {$a <=> $b} @distlist;
+    $selectitem = int($self_confidence * scalar(@distlist) * 0.999);
+    $selfdist{$samplename} = $distlist[$selectitem];
+  }
+}
+
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Calculating distances to test samples...\n";
+}
+
+## Calculate distances to test sample
+## Bray-Curtis dissimilarity:
+## d[jk] = (sum abs(x[ij]-x[ik]))/(sum (x[ij]+x[ik]))
+
+if ($out_sum == 1) {
+  open (OUT, ">$output.summary.txt");
+  
+  print OUT "Results:\n";
+  print OUT "====================================================\n";
+}  
+
+if ($out_table == 1) {
+  open (TABLE, ">$output.table.txt");
+
+  print TABLE "Sample\tGroup\t";
+  if ($binary == 1) {
+    print TABLE "Binary ";
+  }
+  if (lc(substr($measure,0,1)) eq "b") {
+    print TABLE "Bray-Curtis dissimilarity";
+  }
+  if (lc(substr($measure,0,1)) eq "j") {
+    print TABLE "Jaccard distance";
+  }
+  if (lc(substr($measure,0,1)) eq "e") {
+    print TABLE "Euclidean distance";
+  }
+  print TABLE "\tMin\tMax\tp-value\tSignificance level\n";
+}
+
+if ($out_matrix == 1) {
+  open (MATRIX, ">$output.matrix.txt");
+  open (PMATRIX, ">$output.pvalue_matrix.txt");
+
+  print MATRIX "Sample";
+  for ($g = 0; $g < scalar(@groupnames); $g++) {
+    print MATRIX "\t" . $groupnames[$g];
+  }
+  print MATRIX "\n";
+
+  print PMATRIX "Sample";
+  for ($g = 0; $g < scalar(@groupnames); $g++) {
+    print PMATRIX "\t" . $groupnames[$g];
+  }
+  print PMATRIX "\n";
+
+}
+
+for ($c = 1; $c < scalar(@samplenames); $c++) {
+  $samplename = $samplenames[$c];
+  if (($samplename =~ m/$compare_to/) || ($compare_to eq "") || ($compare_to eq "all")) {
+
+    if ($out_sum == 1) {
+      print OUT "Sample\tGroup\t";
+      if ($binary == 1) {
+	print OUT "Binary ";
+      }
+      if (lc(substr($measure,0,1)) eq "b") {
+	print OUT "Bray-Curtis dissimilarity";
+      }
+      if (lc(substr($measure,0,1)) eq "j") {
+	print OUT "Jaccard distance";
+      }
+      if (lc(substr($measure,0,1)) eq "e") {
+	print OUT "Euclidean distance";
+      }
+      print OUT "\t(min-max)\tp-value\tSignificance level\n";
+      print OUT "----------------------------------------------------\n";
+    }
+
+#    print STDERR "$samplename ... ";
+
+    if ($debug == 1) {
+      print STDERR "$c : $samplename   Results size: " . scalar(keys(%results)) . "\n";
+    }
+
+    if ($out_matrix == 1) {
+      print MATRIX $samplename;
+      print PMATRIX $samplename;
+    }
+
+    for ($g = 0; $g < scalar(@groupnames); $g++) {
+      $within = 1;
+      $outside = 0;
+      $avgdist = 0;
+      $maxdist = -1;
+      $mindist = -1;
+      $group = $groupnames[$g];
+      for ($r = 0; $r < $resamples; $r++) {
+	$a = 0;
+	$b = 0;
+	$A = 0;
+	$B = 0;
+	$J = 0;
+	for ($t = 0; $t < scalar(@taxa); $t++) {
+	  $taxname = $taxa[$t];
+	  if (not(defined($results{"$group.$r.$taxname"}))) {
+	    $grt_count = 0;
+	  } else {
+	    $grt_count = $results{"$group.$r.$taxname"};
+	  }
+	  # "bray", "jaccard", "euclidean"
+	  # $a = $a + abs($results{"$group.$r.$taxname"} - int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename}));
+	  # $b = $b + $results{"$group.$r.$taxname"} + int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename});
+	  
+	  if (lc(substr($measure, 0, 1)) =~ m/[bj]/) {
+	    ## d[jk] = (sum abs(x[ij]-x[ik]))/(sum (x[ij]+x[ik]))
+	    if ($binary == 0) {
+	      $a = $a + abs($grt_count - int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename}));
+	      $b = $b + $grt_count + int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename});
+	    } else {
+	      # (A+B-2*J)/(A+B)
+	      if ($grt_count * 1 > 0) {
+		$A++;
+	      }
+	      if ($table{"$samplename\t$taxname"} * 1 > 0) {
+		$B++;
+	      }
+	      if (($grt_count * 1 > 0) && ($table{"$samplename\t$taxname"} * 1 > 0)) {
+		$J++;
+	      }
+	    }
+	  }
+
+	  if (lc(substr($measure, 0, 1)) eq "e") {
+	    # d[jk] = sqrt(sum((x[ij]-x[ik])^2))
+	    if ($binary == 0) {
+	      $a = $a + ($grt_count - int($table{"$samplename\t$taxname"} * $samples / $sums{$samplename})) ** 2;
+	    } else {
+	      # (A+B-2*J)/(A+B)
+	      if ($grt_count * 1 > 0) {
+		$A++;
+	      }
+	      if ($table{"$samplename\t$taxname"} * 1 > 0) {
+		$B++;
+	      }
+	      if (($grt_count * 1 > 0) && ($table{"$samplename\t$taxname"} * 1 > 0)) {
+		$J++;
+	      }
+	    }
+	  }
+	}
+	
+	if (lc(substr($measure, 0, 1)) eq "b") { # Bray-Curtis
+	  if ($binary == 0) {
+	    $dist = $a / $b;
+	  } else {
+	    $dist = ($A + $B - 2 * $J) / ($A + $B);
+	  }
+	}
+	if (lc(substr($measure, 0, 1)) eq "j") { # Jaccard
+	  if ($binary == 0) {
+	    $dist = $a / $b;
+	  } else {
+	    $dist = ($A + $B - 2 * $J) / ($A + $B);
+	  }
+	  $dist = 2 * $dist / (1 + $dist);
+	}
+	if (lc(substr($measure, 0, 1)) eq "e") { # Euclidean
+	  if ($binary == 0) {
+	    $dist = sqrt($a);
+	  } else {
+	    $dist = sqrt($A + $B - 2 * $J);
+	  }
+	}
+	
+	if ($dist <= $selfdist{$samplename}) {
+	  $within++;
+	} else {
+	  $outside++;
+	}
+	$d{"$group.$samplename.$r"} = $dist;
+	$avgdist = $avgdist + $dist;
+	if ($maxdist < $dist) {
+	  $maxdist = $dist;
+	}
+	if (($mindist > $dist) || ($mindist == -1)) {
+	  $mindist = $dist;
+	}
+	#    print $samplename . "\t" . $group . "\t" . $d{"$group.$samplename.$r"};
+	#    print "\n";
+      }
+      $avgdist = $avgdist / $resamples;
+      $p = $within / ($resamples + 1);
+      
+      if ($out_matrix == 1) {
+	print MATRIX "\t"; 
+	printf MATRIX "%.5f",$avgdist;
+	print PMATRIX "\t"; 
+	printf PMATRIX "%.5f",$p;
+      }
+
+      if ($out_sum == 1) {
+	print OUT $samplename . "\t" . $group . "\t";
+	printf OUT "%.3f",$avgdist ;
+	print OUT "\t(";
+	printf OUT "%.3f",$mindist;
+	print OUT "-";
+	printf OUT "%.3f",$maxdist;
+	print OUT ")\t< ";
+	printf OUT "%.3e",$p;
+	print OUT "\t";
+	if ($p <= 0.05) {
+	  print OUT "*";
+	}
+	if ($p <= 0.01) {
+	  print OUT "*";
+	}
+	if ($p <= 0.001) {
+	  print OUT "*";
+	}
+	print OUT "\n";
+      }
+      
+      if ($out_table == 1) {
+	print TABLE $samplename . "\t" . $group . "\t";
+	print TABLE $avgdist ;
+	print TABLE "\t";
+	print TABLE $mindist;
+	print TABLE "\t";
+	print TABLE $maxdist;
+	print TABLE "\t";
+	print TABLE $p;
+	print TABLE "\t";
+	if ($p <= 0.05) {
+	  print TABLE "*";
+	}
+	if ($p <= 0.01) {
+	  print TABLE "*";
+	}
+	if ($p <= 0.001) {
+	  print TABLE "*";
+	}
+	print TABLE "\n";
+      }
+    }
+
+    if ($out_sum == 1) {
+      #    print STDERR "\n";
+      print OUT "----------------------------------------------------\n";
+      print OUT "Internal distance ($samplename, $self_confidence):\t";
+      printf OUT "%.3f",$selfdist{$samplename};
+      print OUT "\n";
+      print OUT "====================================================\n\n";
+    }
+
+    if ($out_matrix == 1) {
+      print MATRIX "\n";
+      print PMATRIX "\n";
+    }
+  }
+}
+
+if ($out_sum == 1) {
+  close OUT;
+}
+
+if ($out_table == 1) {
+  close TABLE;
+}
+
+if ($out_matrix == 1) {
+  close MATRIX;
+  close PMATRIX;
+}
+
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "$now : Finished!\n";
+}

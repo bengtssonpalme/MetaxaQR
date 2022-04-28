@@ -1,15 +1,15 @@
 #!/usr/bin/perl
-# Metaxa 3.0 d1
+# Metaxa 3.0 b1
 $app_title     = "MetaxaQR -- Database installer";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 d1";
+$app_version   = "3.0 b1";
 $app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
 "   MetaxaQR -- Database installer\
-    Copyright (C) 2016-2021 Johan Bengtsson-Palme\
+    Copyright (C) 2016-2022 Johan Bengtsson-Palme\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -31,6 +31,7 @@ $license =
 $usage = "\
 -g {string} : Specify the name of the database to install (usually a gene name)\
               If not specified, the program will show a list of available database options\
+              Note that this is case-sensitive!\
 -v {string} : Specify the name of the version of the database to install\
 
 -d {directory} : The directory where to install the database. Default is in the metaxaQR_db directory in the same directory as MetaxaQR itself\

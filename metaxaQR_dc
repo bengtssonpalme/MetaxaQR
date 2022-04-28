@@ -1,0 +1,202 @@
+#!/usr/bin/perl
+# MetaxaQR
+$app_title     = "MetaxaQR Diversity Tools - Data Collector";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"   MetaxaQR -- Data Collector\
+    Copyright (C) 2011-2022 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- Speed improvments on large data collections\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+
+$usage = "\
+Arguments not associated with an option flag will be interpreted as file names\
+-o {file} : Output file\
+-t {integer} : Column containing taxon data, default = 0\
+-c {integer} : Column containing count data, default = 1\
+
+-r {string} : String to be removed from the file name for use as sample name. Regular expressions can be used. Default = '.level_[0-9].txt'\
+-p {string} : Regular expression pattern for selecting the sample name from the file name. Default = '.*' (will cover full file name)\
+
+-h : displays short usage information\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of Metaxa\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+undef @inputFiles;
+$famCol = 0;
+$countCol = 1;
+$output = "collected_data.txt";
+$removePattern = ".level_[0-9].txt";
+$selectPattern = ".*";
+$usePattern = 1;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+  if ($arg eq "-t") {   # Read taxa column from -t flag
+    $i++;
+    $famCol = @ARGV[$i];
+  }
+  if ($arg eq "-c") {   # Read count column from -c flag
+    $i++;
+    $countCol = @ARGV[$i];
+  }
+  if ($arg eq "-r") {   # Read removal pattern from -r flag
+    $i++;
+    $removePattern = @ARGV[$i];
+  }
+  if ($arg eq "-p") {   # Read select pattern from -p flag
+    $i++;
+    $selectPattern = @ARGV[$i];
+  }
+  if ($arg eq "-s") {   # Read select pattern from -s flag
+    $i++;
+    $selectPattern = @ARGV[$i];
+  }
+
+
+  ## If "-h" is among the options, output short usage data and options
+  if ($arg eq "-h") {
+    print "Usage: metaxa2_dc -o <output file> <input files>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--help" is among the options, output usage data and all options
+  if ($arg eq "--help") {
+    print "Usage: metaxa2_dc -o <output file> <input files>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;   # Exit Metaxa
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit Metaxa
+  }
+
+  if ($arg eq "--debug") {   # Run Metaxa in debug mode
+    $debug = 1;
+  }
+
+  if (substr($arg, 0, 1) ne "-") {
+    push(@inputFiles, $arg);   # If no flag was given, add the option to the filenames
+  }
+}
+
+if (scalar(@inputFiles) == 0) {
+  print STDERR "Error! No input files provided!\n";
+  exit;
+}
+
+$fileNo = 0;
+foreach $file (@inputFiles) {
+  open (INPUT, $file);
+  while (chomp($line = <INPUT>)) {
+    @line = split('\t',$line);
+    $family = @line[$famCol];
+    $count = @line[$countCol];
+    $AoH[$fileNo]->{$family} = $count;
+    $families{$family} = 1;
+  }
+  close (INPUT);
+  $fileNo++;
+}
+
+open (OUT, ">$output");
+
+if ($usePattern == 0) {
+  print OUT "Taxa";
+  foreach $file (@inputFiles) {
+    print OUT "\t" . $file;
+  }
+} else {
+  print OUT "Taxa";
+  foreach $file (@inputFiles) {
+    if ($file ne "") {
+      $file =~ s/$removePattern//g;
+      $file =~ /($selectPattern)/;
+      print OUT "\t" . $1;
+    }
+  }
+}
+print OUT "\n";
+
+@sortFam = sort keys(%families);
+
+foreach $family (@sortFam) {
+    print OUT $family;
+  
+    $fileNo = 0;
+    foreach $file (@inputFiles) {
+      if ($file ne "") {
+	#%counts = @AoH[$fileNo];
+	#print %counts;
+	#print "\n";
+	#if ($counts{"$family"} == 0) {
+	#  print 0;
+	#} else {
+	#  print $counts{"$family"};
+	#}
+	
+	print OUT "\t";
+	
+	$count = $AoH[$fileNo]{$family};
+	if ($count == 0) {
+	  print OUT "0";
+	} else {
+	  print OUT $count;
+	}
+	$fileNo++;
+      }
+    }
+  print OUT "\n";
+}

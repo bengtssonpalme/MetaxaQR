@@ -1,0 +1,288 @@
+#!/usr/bin/perl
+# Metaxa 3.0
+$app_title     = "MetaxaQR Diversity Tools - Species Inference tool";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"   MetaxaQR -- Species Inference tool\
+    Copyright (C) 2015-2018 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- None\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+
+$usage = "\
+-i {file} : Input taxonomy file from MetaxaQR\
+-o {file} : Output file\
+
+-l {integer} : Taxonomic level for performing inference (1 = domain -> 7 = species), default = 7 (species level)\
+-c {value} : Percent identity cutoff for allowing inference, default = 97\
+
+--list_all {T or F} : Lists all possibilities for sequence entries with multiple possible inferences, off (F) by default\
+--multiple {keep,merge,remove,assign} : Decides how to handle entries with multiple possible inferences, default = keep\
+                                        ('assign' will randomly assign the entry to a possible taxa)\
+--low_identity {keep,merge,remove} : Decides how to handle entries with sequence identity below cutoff, default = keep\
+
+-h : displays short usage information\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of MetaxaQR\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+$input = "";
+$output = "";
+$desired_level = 7;
+$cutoff = 97;
+$list_all = 0;
+$multiple_action = "keep";
+$low_id_action = "keep";
+
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input file from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output file from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+
+  if ($arg eq "-c") {   # Read cutoff from -c flag
+    $i++;
+    $cutoff = @ARGV[$i];
+  }
+  if ($arg eq "-l") {   # Read level from -c flag
+    $i++;
+    $desired_level = @ARGV[$i];
+  }
+
+  if ($arg eq "--multiple") {   # Read multiple action from --multiple flag
+    $i++;
+    $multiple_action = @ARGV[$i];
+  }
+  if ($arg eq "--low_identity") {   # Read low identity action from --low_identity flag
+    $i++;
+    $low_id_action = @ARGV[$i];
+  }
+  if ($arg eq "--list_all") {   # Set listing of all possibilities
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $list_all = 0;
+    } else {
+      $list_all = 1;
+    }
+  }
+
+
+
+  ## If "-h" is among the options, output short usage data and options
+  if ($arg eq "-h") {
+    print "Usage: metaxaQR_si -i <input file> -o <output file>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--help" is among the options, output usage data and all options
+  if ($arg eq "--help") {
+    print "Usage: metaxaQR_si -i <input file> -o <output file>\nOptions:$usage";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  if ($arg eq "--debug") {   # Run MetaxaQR in debug mode
+    $debug = 1;
+  }
+}
+
+if ($desired_level eq "") {
+  $desired_level = 7;
+}
+
+$dl = $desired_level - 1;
+
+if ($output eq "") {
+  $output = $input . ".inferred.txt";
+}
+
+open (INPUT, $input);
+while ($line = <INPUT>) {
+  chomp($line);
+  ($readID, $tax, $id, $len, $rel) = split('\t', $line);
+
+  @levels = split(';', $tax);
+
+  $save_tax = "";
+  for ($s = 0; $s <= $dl; $s++) {
+    $save_tax = $save_tax . @levels[$s] . ";";
+  }
+
+  #if (scalar(@levels) > $dl) {
+    for ($l = 0; $l <= scalar(@levels) - 1; $l++) {
+      $level_tax = @levels[$l];
+      if ($level_tax ne "") {
+	if (defined($taxinfo{"$l\t$level_tax"})) {
+	  $taxinfo{"$l\t$level_tax"} = $taxinfo{"$l\t$level_tax"} . "\n" . $save_tax;
+	} else {
+	  $taxinfo{"$l\t$level_tax"} = $save_tax;
+	  push(@keys, "$l\t$level_tax");
+	}
+      }
+   # }
+  }
+}
+close INPUT;
+
+foreach $key (@keys) {
+  @list = split('\n',$taxinfo{"$key"});
+#  if (scalar(@list) > 1) {
+    undef %seen;
+    undef @uniq;
+    foreach $value (@list) {
+      if (defined($seen{$value})) {
+      } else {
+	push(@uniq, $value);
+	$seen{$value} = 1;
+      }
+    }
+    $newlist = "";
+    foreach $item (@uniq) {
+      $newlist = $newlist . $item . "\n";
+    }
+    chomp($newlist);
+    $taxinfo{"$key"} = $newlist;
+#  }
+}
+
+open (INPUT, $input);
+open (OUTPUT, ">$output");
+while ($line = <INPUT>) {
+  chomp($line);
+  ($readID, $tax, $id, $len, $rel) = split('\t', $line);
+
+  @levels = split(';', $tax);
+
+  $save_tax = "";
+  for ($s = 0; $s <= $dl; $s++) {
+    $save_tax = $save_tax . @levels[$s] . ";";
+  }
+
+  if (scalar(@levels) > $dl) {
+    print OUTPUT $readID . "\t" . $save_tax . "\t$id\t$len\t$rel\tD\tAs defined\n";
+  } else {
+    $l = scalar(@levels) - 1;
+    $level_tax = @levels[$l];
+    if (defined($taxinfo{"$l\t$level_tax"})) {
+      @list = split('\n',$taxinfo{"$l\t$level_tax"});
+      if (scalar(@list == 1)) {
+	if ($id >= $cutoff) {
+	  $resulting_levels = split(';', $taxinfo{"$l\t$level_tax"});
+	  if ($resulting_levels >= $dl) {
+	    print OUTPUT $readID . "\t".  $taxinfo{"$l\t$level_tax"} . "\t$id\t$len\t$rel\tS\tInferred by single-match\n";
+	  } else {
+	    print OUTPUT $readID . "\t".  $taxinfo{"$l\t$level_tax"} . "\t$id\t$len\t$rel\tN\tNo change\n";
+	  }
+	} else {
+	  if ($low_id_action eq "keep") {
+	    print OUTPUT $readID . "\t". $save_tax . "\t$id\t$len\t$rel\tSb\tNo inferrence due to identity below $cutoff %\n";
+	  }
+	  if ($low_id_action eq "merge") {
+	    print OUTPUT $readID . "\tLow-identity sequence\t$id\t$len\t$rel\tSb\tNo inferrence due to identity below $cutoff %\n";
+	  }
+	  if ($low_id_action eq "remove") {
+	    # Do nothing, will remove sequence from list
+	  }
+	}
+      } else {
+	if ($id >= $cutoff) {
+	  if ($multiple_action eq "keep") {
+	    if ($list_all == 1) {
+	      print OUTPUT $readID . "\t".  $save_tax . "\t$id\t$len\t$rel\tM\tSeveral options:\n";
+	      $spaces = $readID;
+	      $spaces =~ s/[^ ]/ /g;
+	      foreach $item (@list) {
+		print OUTPUT "$spaces\t$item" . "\n";
+	      }
+	      print OUTPUT "\n";
+	    } else {
+	      print OUTPUT $readID . "\t".  $save_tax . "\t$id\t$len\t$rel\tM\tSeveral options\n";
+	    }
+	  }
+	  if ($multiple_action eq "assign") {
+	    $rnd = int(rand() * scalar(@list));
+	    $rnd_tax = @list[$rnd];
+	    print OUTPUT $readID . "\t".  $rnd_tax . "\t$id\t$len\t$rel\tMa\tSeveral options, randomly assigned\n";
+	  }
+	  if ($multiple_action eq "merge") {
+	    print OUTPUT $readID . "\tMulti-origin sequence\t$id\t$len\t$rel\tM\tSeveral options\n";
+	  }
+	  if ($multiple_action eq "remove") {
+	    # Do nothing, will remove sequence from list
+	  }
+	} else {
+	  if ($low_id_action eq "keep") {
+	    print OUTPUT $readID . "\t".  $save_tax . "\t$id\t$len\t$rel\tMb\tNo inferrence due to identity below $cutoff %\n";
+	  }
+	  if ($low_id_action eq "merge") {
+	    print OUTPUT $readID . "\tLow-identity sequence\t$id\t$len\t$rel\tMb\tNo inferrence due to identity below $cutoff %\n";
+	  }
+	  if ($low_id_action eq "remove") {
+	    # Do nothing, will remove sequence from list
+	  }
+	}
+      }
+    } else {
+      print STDERR "Error! Could not find sufficient taxonomic data for $readID   This should not be possible.\n";
+    }
+  }
+}
+close INPUT;
+close OUTPUT;

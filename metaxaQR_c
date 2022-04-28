@@ -2,14 +2,14 @@
 # MetaxaQR Classifier
 $app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 d1";
+$app_version   = "3.0 b1";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
   "    metaxaQR_c -- MetaxaQR Classifier -- Classifies (predicted) barcoding genes\
-    Copyright (C) 2011-2021 Johan Bengtsson-Palme\
+    Copyright (C) 2011-2022 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -56,7 +56,7 @@ Sequence selection options:\
                               Order of the values is: Kingdom/Domain,Phylum,Class,Order,Family,Genus,Species
                               Default values are:     0,60,70,75,85,90,97
 --scoring_model {new, old} : Selects the scoring model to be used for classification, select 'old' to use the pre 2.2 scoring model, default = new [REMOVED!]\
--H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50 [DEFAULT HAS CHANGED, AND INTERPRETATIONOF OPTION HAS ALSO CHANGED!]\
+-H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50 [DEFAULT HAS CHANGED, AND INTERPRETATION OF OPTION HAS ALSO CHANGED!]\
 --masking {T or F} : Whether to use masking in the searches or not, off (F) by default [NEW OPTION, coupled to --qmask]\
 --gap_penalty {string} : The gap penalty scores applied to the vsearch step, default = '20I/2E+2I/1E' [NEW OPTION]\
 --search_id {value} : The sequence identity cutoff for the vsearch, default = 0.5 [NEW OPTION]\
@@ -513,6 +513,79 @@ This error is fatal, and MetaxaQR will now abort.\n";
   `vsearch --makeudb_usearch $reference --output $tempDir/REF_DB.udb --dbmask none --quiet`;
 }
 
+## Check if this comes from a paired file pair of reads
+open (PAIRINFO, "$tempDir/pairinfo.1.txt");
+$checkPairInfo = <PAIRINFO>;
+$checkPairInfo = <PAIRINFO>;
+close PAIRINFO;
+if ($checkPairInfo =~ m/&PAIR&/) {
+  $inputIsPaired = 1;
+} else {
+  $inputIsPaired = 0;
+}
+
+if ($inputIsPaired == 1) {
+  ## Split these pairs into individual reads for classification
+  $now = localtime;
+  if ($silent == 0) {
+    print STDERR "$now : Splitting pairs...\n";
+  }
+  $seq = "";
+  $cseq = "";
+  $header = "";
+
+  open (IN, $input);
+  open (NEWIN, ">$input.pairscombined.fasta");
+  while ($line = <IN>) {
+    chomp($line);
+    if (substr($line, 0, 1) eq ">") {
+      
+      if ($seq ne "") {
+	($fw, $cseq) = split('NNN*', $seq);
+	
+	$cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+	$cseq =~ s/[^A-Z]//g; # Remove all non-alphabetic characters
+	$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+	$rev = reverse($cseq);
+	
+	print NEWIN ">" . $id . "+_1 " . $header . "\n";
+	print NEWIN $fw . "\n";
+	    
+	print NEWIN ">" . $id . "+_2 " . $header . "\n";
+	print NEWIN $rev . "\n";
+      }
+      
+      $header = $line;
+      ($id) = split(' ',$header);
+      $id =~ s/^>//;
+      $header =~ s/^[^ ]* //;
+      $seq = "";
+    } else {
+      $seq = $seq . $line;
+    }
+
+  }
+    
+  if ($seq ne "") {
+    ($fw, $cseq) = split('NNN*', $seq);
+    $cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+    $cseq =~ s/[^A-Z]//g;	# Remove all non-alphabetic characters
+    $cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+    $rev = reverse($cseq);
+    
+    print NEWIN ">" . $id . "+_1 " . $header . "\n";
+    print NEWIN $fw . "\n";
+    
+    print NEWIN ">" . $id . "+_2 " . $header . "\n";
+    print NEWIN $rev . "\n";
+  }
+  
+  close IN;
+  close NEWIN;
+
+  $input = "$input.pairscombined.fasta";
+}  
+
 ## Get the total memory available
 open (MEMFILE, "/proc/meminfo");  #  Open the memory information "file"
 while (chomp($line = <MEMFILE>)) {  # Read from this file
@@ -741,6 +814,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 
   open (OUTMQR, ">>$tempDir/classifications.mqr"); # Open the new MQR classification file for writing
   open (BLASTOUT, "$tempDir/rRNA.blastn.$filenumber"); # Open the BLAST output file for reading
+  open (DEBUG, ">>$tempDir/debug_info.txt");
   
   if ($filenumber == 1) {
     ## Set all counts for different rRNA types, and found sequences to zero
@@ -763,6 +837,13 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     ## Collect list of the same hits
     ($query,$subject,$identity,$length,$mismatches,$gaps,$qs,$qe,$ss,$se,$mEval,$mScore) = split('\t',$lineB);
 
+    if ($inputIsPaired == 1) {
+      $fw_or_rev = substr($query, length($query) - 1, 1);
+      $query = substr($query, 0, length($query) -3); ## Remove the pair-info part
+    } else {
+      $fw_or_rev = 0;
+    }
+    
     if ($lastQuery eq "") {
       undef @lineList;
       $ssuQueries++;	# Add one to the number of inputted queries
@@ -774,6 +855,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	push(@lineList, $lineB);
 	next;
       } else {
+	print DEBUG "NEXT\n";
 	$common_tax = "";
 	$lastQuery = $query;
 	foreach $line (@lineList) {
@@ -784,6 +866,24 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	  $query =~ s/ .*//;
 	  $subject =~ s/ .*//;
 	  $subject =~ s/^lcl.//;
+
+	  if ($inputIsPaired == 1) {
+	    $fw_or_rev = substr($query, length($query) - 1, 1);
+	    $query = substr($query, 0, length($query) -3); ## Remove the pair-info part
+	  } else {
+	    $fw_or_rev = 0;
+	  }
+
+	  if ($fw_or_rev == 0) {
+	    $len1 = $length;
+	    $len2 = 0;
+	  }
+	  if ($fw_or_rev == 1) {
+	    $len1 = $length;
+	  }
+	  if ($fw_or_rev == 2) {
+	    $len2 = $length;
+	  }
 	  
 	  $queryType = substr($query,length($query) - 2, 2); # Use the last two characters of the query identifier to determine the metaxa_x-assigned origin of the sequence
 	  if ($queryType =~ m/\|[ABCEFMNO]/) { # If the query type begins with a "|" and ends with any of these characters "ABCEFMNO", then assume that metaxa_x did its job
@@ -795,17 +895,27 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	  }
 	  $alnQuery = $writeQuery;
 	  $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
-	  
-	  $line = $query . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+
+	  if ($fw_or_rev > 0) {
+	    $line = $query . "+_" . $fw_or_rev . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+	  } else {
+	    $line = $query . "\t" . $subject . "\t" . $identity . "\t" . $length . "\t" . $mismatches . "\t" . $gaps . "\t" . $qs . "\t" . $qe . "\t" . $ss . "\t" . $se . "\t" . $mEval . "\t" . $mScore;
+	  }
 	  
 	  if ($out_table == 1) {	# If table output is on
 	    if ($line ne "END") {
 	      print TABLE $line . "\n";	# Print to blast table output
 	    }
 	  }
-	  
-	  if (defined($refHits{$query})) {
-	    next;
+
+	  if ($inputIsPaired == 1) {
+	    if (defined($refHits{"$query\+_1"})) {
+	      next;
+	    }
+	  } else {
+	    if (defined($refHits{$query})) {
+	      next;
+	    }
 	  }
 
 	  $mqr_label = $labels{$subject};
@@ -827,24 +937,48 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	    }
 	  }
 
+	  print DEBUG $line . "\n";
+	  print DEBUG $mqr_tax . "\n";
+
 	  if ($common_tax eq "") {
-	    $common_tax = $mqr_tax;
+	    if (substr($mqr_tax, -1, 1) eq ";") {
+	      $common_tax = $mqr_tax;
+	    } else {
+	      $common_tax = $mqr_tax . ";";
+	    }
 	  } else {
 	    $new_common_tax = "";
-	    for ($c = length($common_tax); $c > 0; $c--) {
-	      if (substr($common_tax, 0, $c) eq substr($mqr_tax, 0, $c)) {
-		$new_common_tax = substr($common_tax, 0, $c);
-		last;
+	    if ($common_tax eq $mqr_tax) {
+	      $new_common_tax = $common_tax;
+	    } else {
+	      for ($c = length($common_tax); $c > 0; $c--) {
+		if ((substr($common_tax, 0, $c) eq substr($mqr_tax . ";", 0, $c)) && (substr($common_tax, $c-1, 1) eq ";")) {
+		  $new_common_tax = substr($common_tax, 0, $c);
+		  last;
+		}
 	      }
 	    }
-	    $common_tax = $new_common_tax;
+	    if (substr($new_common_tax, -1, 1) eq ";") {
+	      $common_tax = $new_common_tax;
+	    } else {
+	      $common_tax = $new_common_tax . ";";
+	    }
 	  }
+	  print DEBUG $common_tax . "\n";
+	  print DEBUG "--\n";
 	}
 	$mqr_tax = $common_tax;
+	$length = $len1 + $len2;
 	
 	$rID = $identity / 100;
 	$rMLen = $length; # Get the match length
-	$rQLen = length($sequences{$query}); # Load the length of the query DNA sequence
+	if ($inputIsPaired == 1) {
+	  $rQLen1 = length($sequences{"$query\+_1"}); # Load the length of the forward query DNA sequence
+	  $rQLen2 = length($sequences{"$query\+_2"}); # Load the length of the reverse query DNA sequence
+	  $rQLen = $rQLen1 + $rQLen2;
+	} else {
+	  $rQLen = length($sequences{$query}); # Load the length of the query DNA sequence
+	}
 	$rDLen = $rQLen - $rMLen; # Calculate the non-matched length of the sequence
 	#    $rMScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rMLen ** ($rID ** 1.1) ) ) ) ) );
 	#    $rDScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rDLen ** ($rID ** 1.1) ) ) ) ) );
@@ -866,7 +1000,12 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	if ($confidence < $C) {
 	  print TAXONOMY $writeQuery . "\t" . "Unknown" . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
 	} else {
-	  print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	  if (length($mqr_tax) < 5) {
+	    print TAXONOMY $writeQuery . "\t" . "Unknown" . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	    $mqr_tax = "Mismatch";
+	  } else {
+	    print TAXONOMY $writeQuery . "\t" . $mqr_tax . "\t" .  $identity . "\t" . $length . "\t" . substr($confidence,0,5) . "\n"; # Print taxonomic prediction
+	  }
 	}
 	
 	$agreement = $mqr_tax;
@@ -885,8 +1024,15 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	    $bestType = $queryType;
 	  }
 	}
-	
-	$DNA = $sequences{$query}; # Load this DNA sequence
+
+	if ($inputIsPaired == 1) {
+	  $DNA1 = $sequences{"$query\+_1"}; # Load the forward query DNA sequence
+	  $DNA2 = $sequences{"$query\+_2"}; # Load the reverse query DNA sequence
+	  $DNA = $DNA1 . "NNNNN" . $DNA2;
+	} else {
+	  $DNA = $sequences{$query}; # Load this DNA sequence
+	}
+
 	$inputList{$query} = 1; # Indicate that this sequence had vsearch matches
 	
 	$geneType = uc($gene);
@@ -966,11 +1112,19 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     }
   }
   close BLASTOUT;			# Close the blast output file
+
+  
   ## Save sequences not found in the BLAST-report
   foreach $query (keys(%inputList)) { # For all sequences that found no matches in the blast search
     
-    if (defined($refHits{$query})) {
-      next;
+    if ($inputIsPaired == 1) {
+      if (defined($refHits{"$query\+_1"})) {
+	next;
+      }
+    } else {
+      if (defined($refHits{$query})) {
+	next;
+      }
     }
     if ($inputList{$query} == 0) {
       
@@ -991,7 +1145,13 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
       $alnQuery =~ s/[^0-9A-Za-z]/_/g; # Replace all special characters with a "_", to make the file system happier
       
       ## Extract the actual sequence
-      $DNA = $sequences{$query};
+      if ($inputIsPaired == 1) {
+	$DNA1 = $sequences{"$query\+_1"}; # Load the forward query DNA sequence
+	$DNA2 = $sequences{"$query\+_2"}; # Load the reverse query DNA sequence
+	$DNA = $DNA1 . "NNNNN" . $DNA2;
+      } else {
+	$DNA = $sequences{$query}; # Load this DNA sequence
+      }
       
       $geneType = uc($gene);
       if (($geneType eq "SSU") || ($geneType eq "LSU")) {
@@ -1276,7 +1436,9 @@ if ($split_pairs == 1) {
     close FW;
     close REV;
   }
-}  
+}
+
+close DEBUG;
 
 ## Write end time a summary file
 if ($pipeline == 0) {		# If not running in pipeline mode
@@ -1313,4 +1475,4 @@ sub findIDLevel {
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - March 2021
+## //Johan Bengtsson-Palme, December 2010 - May 2022

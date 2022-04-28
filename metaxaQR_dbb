@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Main MetaxaQR Database Builder
+"""
+
+import argparse
+import time
+
+from src.mqr_db.parsing import create_parser, return_args
+from src.mqr_db.mqrdb_run import main_mqrdb
+
+
+# MetaxaQR Database Builder
+app_title = "MetaxaQR Database Builder -- Automatic database creation for MetaxaQR"
+app_author = "Sebastian Wettersten & Johan Bengtsson-Palme, University of Gothenburg"
+app_version = "3.0 b1"
+# ----------------------------------------------------------------- #
+
+# License information
+license =  "    metaxaQR_dbb - MetaxaQR Database Builder -- Automatic database creation for MetaxaQR\
+    Copyright (C) 2016-2022 Sebastian Wettersten, Johan Bengtsson-Palme & Rodney Richardson\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/."
+
+if __name__ == "__main__":
+    #: creates the parser and gets the arguments input by user
+    print(app_title)
+    print("by "+ app_author)
+    print("Version: "+ app_version)
+    print("-----------------------------------------------------------------\n")
+    parser = create_parser()
+    args = return_args(parser)
+
+    #: runs the main loop of MetaxaQR_Database Builder
+    main_mqrdb(args)

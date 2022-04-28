@@ -1,4 +1,10 @@
 #!/usr/bin/perl
+# Distributed with the Metaxa 3.0 b1 package
+$app_title     = "MetaxaQR -- get_fasta";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
+# ----------------------------------------------------------------- #
 
 $seqID = shift;
 $file = shift;

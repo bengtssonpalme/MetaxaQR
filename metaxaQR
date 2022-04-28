@@ -1,15 +1,15 @@
 #!/usr/bin/perl
-# Metaxa 3.0 d1
+# Metaxa 3.0 b1
 $app_title     = "MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 d1";
+$app_version   = "3.0 b1";
 $app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
 "   MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets\
-    Copyright (C) 2011-2021 Johan Bengtsson-Palme\
+    Copyright (C) 2011-2022 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -44,7 +44,7 @@ $usage = "\
 -i {file} : DNA FASTA input file to investigate\
 -o {file} : Base for the names of output file(s)\
 -f {a, auto, f, fasta, q, fastq, p, paired-end} : Specifies the format of the input file, default = auto\
--g {ssu, lsu, string} : Specifies the barcoding gene MetaxaQR should look for, default is ssu\
+-g {SSU, LSU, string, all} : Specifies the barcoding gene MetaxaQR should look for, several can be specified (comma-separated), default is SSU\
 --cpu {value} : The number of CPU threads to use, default is 1\
 
 --help : displays the full options for MetaxaQR\
@@ -61,7 +61,7 @@ $options = "\
 -2 {file} : DNA FASTQ input file containing the second reads in the pairs to investigate\
 -f {a, auto, f, fasta, q, fastq, p, paired-end, pa, paired-fasta} : Specifies the format of the input file, default = auto\
 -z {f, a, auto, gzip, bzip, zip, dsrc} : Specifies the format of the input file, default = f (off)\
--g {ssu, lsu, string} : Specifies the barcoding gene MetaxaQR should look for, default is ssu\
+-g {SSU, LSU, string, all} : Specifies the barcoding gene MetaxaQR should look for, several can be specified (comma-separated), default is SSU\
 --pairfile {file} : DNA FASTQ file containing the pairs to the sequences in the input file\
 --format {a, auto, f, fasta, q, fastq, p, paired-end} : Specifies the format of the input file, default = auto\
 --mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
@@ -162,7 +162,7 @@ $hmmscan = "";
 $profileDB = "";
 $blastDB = "";
 $type = "all";
-$gene = "ssu";
+$genes = "SSU";
 $E = 1;
 $S = 12;
 $N = 2;
@@ -240,9 +240,10 @@ for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
     $i++;
     $inputFormat = @ARGV[$i];
   }
-  if (($arg eq "-g") || ($arg eq "--gene")) {   # Read gene from -g (or --gene) flag
+  if (($arg eq "-g") || ($arg eq "--gene")) {   # Read genes from -g (or --gene) flag
     $i++;
-    $gene = @ARGV[$i];
+    $genes = @ARGV[$i];
+    (@geneList) = split(',', $genes);
   }
   if ($arg eq "--pairfile") {   # Read input paired reads from --pairfile flag
     $i++;
@@ -646,35 +647,8 @@ This error is fatal, and Metaxa will now abort.\n";
   exit;
 }
 
-
-$trypath = "$bindir\metaxaQR_db/$gene";
-chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
-if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
-  $trypath = "/dbs/metaxaQR_db/$gene";
-  chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
-  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
-    $homeDir = $ENV{"HOME"};
-    $trypath = "$homeDir/dbs/metaxaQR_db/$gene";
-    chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
-    if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
-      $trypath = "$homeDir/metaxaQR_db/$gene";
-      chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
-      if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
-	$trypath = "$homeDir/bin/metaxaQR_db/$gene";
-	chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
-	if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
-	  $trypath = "$bindir\metaxaQR_db/$gene";
-	}
-      }
-    }
-  }
-}
-
-if ($profileDB eq "") {  # If no profile DB has been specified
-  $profileDB = "$trypath/HMMs";  # Set the profile DB to the gene path
-}
-if ($blastDB eq "") {  # If no blast DB has been specified
-  $blastDB = "$trypath/mqr";  # Set the blast DB to the gene path
+if ($genes eq "all") {
+  chomp(@geneList = `ls $bindir\metaxaQR_db/*/mqr.repr | sed "s-.*metaxaQR_db/--" | sed "s-/mqr.*--"`);
 }
 
 # $quality_percent = $quality_percent / 100;  # Create a ratio of the quality percentage
@@ -700,12 +674,13 @@ if ($out_date == 1) {   # If a date and time stamp should be supplied
   $output = $output . $outputDate;   # Add the date and time stamp top the output base name
 }
 
-$inputFileName = $input;
-$inputFileName =~ s-^.*/--;
-
+  
 $tempName = "metaxa_temp_directory__$output";   # Setup a temporary directory variable
 $tempName =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
 $tempDir = $tempDir . "/" . $tempName;
+
+$inputFileName = $input;
+$inputFileName =~ s-^.*/--;
 
 ## Check for binaries
 chomp($path = `which vsearch`);   # Get the path for vsearch
@@ -756,27 +731,6 @@ This error is not fatal, but will prevent MetaxaQR from automatically creating a
 Automatic sequence alignment has now been turned off completely.\n";
   print STDERR "-----------------------------------------------------------------\n";
   $out_align = "n";   # Turn off automatic sequence aligning
-}
-
-## Check for databases
-chomp($errormsg = `ls $profileDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
-if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
-  print STDERR "FATAL ERROR :: The specified profile database for gene $gene could not be found.\
-Consult the manual for installation instructions.\
-This error is fatal, and MetaxaQR will now abort.\
-If you want to only use the classification capabilities, use the metaxaQR_c program.\n";
-  print STDERR "-----------------------------------------------------------------\n";
-  exit;
-}
-
-chomp($errormsg = `ls $blastDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the BLAST database
-if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
-  print STDERR "FATAL ERROR :: The specified classification database for gene $gene could not be found.\
-Consult the manual for installation instructions.\
-This error is fatal, and MetaxaQR will now abort.\
-If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
-  print STDERR "-----------------------------------------------------------------\n";
-  exit;
 }
 
 if ($input ne "") {  # If an input file is specified
@@ -1433,71 +1387,180 @@ if ($mode ne "m") {  # Mode is not metagenomic
 }
 
 
-if ($classify_only == 0) {  ## If not only classification should be run
-  ## Get the current time and output starting message for the Metaxa Extractor
+
+foreach $gene (@geneList) {
+
   $now = localtime;
   if ($silent == 0) {
-    print STDERR "$now : Starting MetaxaQR Extractor...\n";
+    print STDERR "$now : Running MetaxaQR for gene $gene...\n";
     print STDERR "-----------------------------------------------------------------\n";
   }
-  
-  if ($hmmscan eq "") {   # If no pre-computed hmmscan file is supplied, call metaxa_x (the Metaxa Extractor)
-    if ($search_score eq "") {   # If E-value cutoff is used instead of score cutoff, use this command:
-      `$bindir/metaxaQR_x -i "$input" -o "$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_eval "$search_eval" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
-    } else {   # If score cutoff is used instead of E-value cutoff, use this command:
-      `$bindir/metaxaQR_x -i "$input" -o "$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder" --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_score "$search_score" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
-    }
-  } else {   # If a pre-computed hmmscan file is supplied, send it on to metaxa_x (the Metaxa Extractor)
-    `$bindir/metaxaQR_x -i "$input" --hmmscan $hmmscan -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --mode "$mode" --reset "$reset" --temp "$tempDir" --pipeline`;
-  }
-} else {  ## Convert input files for use with classifier
-  $H = 0;
-  $now = localtime;
-  if ($silent == 0) {
-    print STDERR "$now : Preparing input files for classification...\n";
-  }
-  open (INPUT, $input);
-  open (FASTA, ">$output.extraction.fasta");   # Create a FASTA output file for found sequences
-  $seqDNA = "";
-  while ($line = <INPUT>) {
-    chomp($line);
-    if (substr($line, 0, 1) eq ">") {
-      if ($seqDNA ne "") {
-	$seqDNALength = length($seqDNA);
-	print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
-	print FASTA  $seqDNA . "\n";   # Write DNA sequence
+
+  $trypath = "$bindir\metaxaQR_db/$gene";
+  chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+    $trypath = "/dbs/metaxaQR_db/$gene";
+    chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+    if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+      $homeDir = $ENV{"HOME"};
+      $trypath = "$homeDir/dbs/metaxaQR_db/$gene";
+      chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+      if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+	$trypath = "$homeDir/metaxaQR_db/$gene";
+	chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+	if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+	  $trypath = "$homeDir/bin/metaxaQR_db/$gene";
+	  chomp($errormsg = `ls $trypath/* 2>&1 1>/dev/null`);   # Get the error msg when looking for the database
+	  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then try another database path
+	    $trypath = "$bindir\metaxaQR_db/$gene";
+	  }
+	}
       }
-      $seqID = substr($line,1,60);
-      $seqDNA = "";
-    } else {
-      $seqDNA = $seqDNA . $line;
     }
   }
-  if ($seqDNA ne "") {
-    $seqDNALength = length($seqDNA);
-    print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
-    print FASTA  $seqDNA . "\n";   # Write DNA sequence
+  
+  if ($profileDB eq "") {  # If no profile DB has been specified
+    $profileDB = "$trypath/HMMs";  # Set the profile DB to the gene path
   }
-  close INPUT;
-  close FASTA;
-}
-
-
-if ($extract_only == 0) {  ## If not only extraction should be run
-  ## Get the current time and output starting message for the Metaxa Classifier
-  $now = localtime;
-  if ($silent == 0) {
-    print STDERR "-----------------------------------------------------------------\n";
-    print STDERR "$now : Starting MetaxaQR Classifier...\n";
-    print STDERR "-----------------------------------------------------------------\n";
+  if ($blastDB eq "") {  # If no blast DB has been specified
+    $blastDB = "$trypath/mqr";  # Set the blast DB to the gene path
   }
   
+  
+  $tempDirGene = $tempDir . "/" . $gene;   # Setup a temporary directory variable
+  `mkdir $tempDirGene`;
+  
+  
+  ## Check for databases
+  chomp($errormsg = `ls $profileDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the profile database
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+    print STDERR "FATAL ERROR :: The specified profile database for gene $gene could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the classification capabilities, use the metaxaQR_c program.\n";
+    print STDERR "-----------------------------------------------------------------\n";
+    exit;
+  }
+  
+  chomp($errormsg = `ls $blastDB* 2>&1 1>/dev/null`);   # Get the error msg when looking for the BLAST database
+  if (substr($errormsg,0,4) eq "ls: ") {   # If the error message begins with "ls: ", then show an error message and exit Metaxa
+    print STDERR "FATAL ERROR :: The specified classification database for gene $gene could not be found.\
+Consult the manual for installation instructions.\
+This error is fatal, and MetaxaQR will now abort.\
+If you want to only use the HMMER-based extraction capabilities, use the metaxaQR_x program.\n";
+    print STDERR "-----------------------------------------------------------------\n";
+    exit;
+  }
+
+
+  if ($classify_only == 0) {  ## If not only classification should be run
+    ## Get the current time and output starting message for the Metaxa Extractor
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Starting MetaxaQR Extractor...\n";
+      print STDERR "-----------------------------------------------------------------\n";
+    }
+    
+    if ($hmmscan eq "") {   # If no pre-computed hmmscan file is supplied, call metaxa_x (the Metaxa Extractor)
+      if ($search_score eq "") {   # If E-value cutoff is used instead of score cutoff, use this command:
+	`$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_eval "$search_eval" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+      } else {   # If score cutoff is used instead of E-value cutoff, use this command:
+	`$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder" --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_score "$search_score" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+    }
+    } else {   # If a pre-computed hmmscan file is supplied, send it on to metaxa_x (the Metaxa Extractor)
+      `$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" --hmmscan $hmmscan -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+    }
+  } else {  ## Convert input files for use with classifier
+    $H = 0;
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "$now : Preparing input files for classification...\n";
+    }
+    open (INPUT, $input);
+    open (FASTA, ">$tempDirGene/$output.extraction.fasta");   # Create a FASTA output file for found sequences
+    $seqDNA = "";
+    while ($line = <INPUT>) {
+      chomp($line);
+      if (substr($line, 0, 1) eq ">") {
+	if ($seqDNA ne "") {
+	  $seqDNALength = length($seqDNA);
+	  print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
+	  print FASTA  $seqDNA . "\n";   # Write DNA sequence
+	}
+	$seqID = substr($line,1,60);
+	$seqDNA = "";
+      } else {
+	$seqDNA = $seqDNA . $line;
+      }
+    }
+    if ($seqDNA ne "") {
+      $seqDNALength = length($seqDNA);
+      print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
+      print FASTA  $seqDNA . "\n";   # Write DNA sequence
+    }
+    close INPUT;
+    close FASTA;
+  }
+  
+  
+  if ($extract_only == 0) {  ## If not only extraction should be run
+    ## Get the current time and output starting message for the Metaxa Classifier
+    $now = localtime;
+    if ($silent == 0) {
+      print STDERR "-----------------------------------------------------------------\n";
+      print STDERR "$now : Starting MetaxaQR Classifier...\n";
+      print STDERR "-----------------------------------------------------------------\n";
+    }
+    
   ## Start the Metaxa Classifier (metaxa_c)
-  `$bindir/metaxaQR_c -i "$output.extraction.fasta" -o "$output" -d "$blastDB" -t "$type" -g "$gene" -E "$E" -S "$S" -M "$M" -H "$H" -R "$C" --search_id "$search_id" --gap_penalty "$gap_penalty" --masking "$masking" --search_maxaccepts "$search_maxaccepts" --search_maxrejects "$search_maxrejects" --search_wordsize "$W" --cpu "$cpu" --summary "$out_sum" --fasta "$out_fasta" --table "$out_table" --align "$out_align" --not_found "$out_not" --taxonomy "$out_tax" --taxlevel "$tax_level" --silent "$silent" --reference "$reference" --ref_identity "$ref_id" --mode "$mode" --split_pairs "$split_pairs" --temp "$tempDir" --pipeline`;
+    `$bindir/metaxaQR_c -i "$tempDirGene/$output.extraction.fasta" -o "$tempDirGene/$output" -d "$blastDB" -t "$type" -g "$gene" -E "$E" -S "$S" -M "$M" -H "$H" -R "$C" --search_id "$search_id" --gap_penalty "$gap_penalty" --masking "$masking" --search_maxaccepts "$search_maxaccepts" --search_maxrejects "$search_maxrejects" --search_wordsize "$W" --cpu "$cpu" --summary "$out_sum" --fasta "$out_fasta" --table "$out_table" --align "$out_align" --not_found "$out_not" --taxonomy "$out_tax" --taxlevel "$tax_level" --silent "$silent" --reference "$reference" --ref_identity "$ref_id" --mode "$mode" --split_pairs "$split_pairs" --temp "$tempDirGene" --pipeline`;
+    
+    
+  }
 
-  
 }
 
+$now = localtime;
+if ($silent == 0) {
+  print STDERR "-----------------------------------------------------------------\n";
+  print STDERR "$now : Merging taxonomic data for genetic markers...\n";
+  print STDERR "-----------------------------------------------------------------\n";
+}
+
+foreach $gene (@geneList) {
+  if (scalar(@geneList) > 1) {
+    $tempDirGene = $tempDir . "/" . $gene;   # Setup a temporary directory variable
+    `mkdir $output.$gene`;
+    `cp $tempDirGene/$output* $output.$gene`;
+    if ($out_sum == 1) {   # If summary output is on
+      open (SUMMARY, ">>$output.summary.txt");   # Append to the summary file
+      print SUMMARY "-----------------------------------------------------------------\n";
+      print SUMMARY "Statistics for gene $gene\n";   # Write which gene
+      print SUMMARY "-----------------------------------------------------------------\n";
+      close (SUMMARY);   # Close summary file
+      `cat $tempDirGene/$output.summary.txt >>$output.summary.txt`;
+    }
+  } else {
+    $tempDirGene = $tempDir . "/" . $gene;   # Setup a temporary directory variable
+    if ($output =~ m-/-) {
+      $destination = $output;
+      $destination =~ s-(.*)/[^/]*$-\1-;
+    } else {
+      $destination = ".";
+    }
+    if ($out_sum == 1) {   # If summary output is on
+      `cat $output.summary.txt > $output.summary.txt.temp`;
+      `cat $tempDirGene/$output.summary.txt >> $output.summary.txt.temp`;
+    }
+    `cp $tempDirGene/$output* $destination`;
+    if ($out_sum == 1) {   # If summary output is on
+      `mv $output.summary.txt.temp $output.summary.txt`;
+    }
+  }
+}
+
+## THIS IS WHERE IN THE FUTURE THE COMBINED TAXONOMIC ASSINGMENT MODULE WILL BE RUN
+  
 ## Save raw data
 if ($save_raw == 1) {   # If the raw data should be saved
   `mv $tempDir $output\_metaxa_raw_output`;   # Change the name of the temporary directory to ..._metaxa_raw_output
@@ -1508,7 +1571,6 @@ if ($save_raw == 1) {   # If the raw data should be saved
 ## Get the current time and output a finished message
 $now = localtime;
 if ($silent == 0) {
-  print STDERR "-----------------------------------------------------------------\n";
   print STDERR "$now : MetaxaQR is finished!\n";
 }
 
@@ -1524,4 +1586,4 @@ if ($out_sum == 1) {   # If summary output is on
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - March 2021
+## //Johan Bengtsson-Palme, December 2010 - May 2022

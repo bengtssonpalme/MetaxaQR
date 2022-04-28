@@ -1,8 +1,17 @@
 #!/usr/bin/perl
 
+# Metaxa 3.0 b1
+$app_title     = "MetaxaQR Installer";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "";
+# ----------------------------------------------------------------- #
+
 ## This little neat script installs metaxaQR in the default way
-print "MetaxaQR Installer\n";
-print "------------------\n";
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
 
 $homeDir = $ENV{"HOME"};
 
@@ -62,6 +71,7 @@ if ($su == 1) {
   `sudo chmod 755 $bindir/metaxaQR`;
   `sudo chmod 755 $bindir/metaxaQR_x`;
   `sudo chmod 755 $bindir/metaxaQR_c`;
+  `sudo chmod 755 $bindir/metaxaQR_dbb`;
   `sudo chmod 755 $bindir/metaxaQR_ttt`;
   `sudo chmod 755 $bindir/metaxaQR_dc`;
   `sudo chmod 755 $bindir/metaxaQR_si`;
@@ -73,6 +83,7 @@ if ($su == 1) {
   `chmod 755 $bindir/metaxaQR`;
   `chmod 755 $bindir/metaxaQR_x`;
   `chmod 755 $bindir/metaxaQR_c`;
+  `chmod 755 $bindir/metaxaQR_dbb`
   `chmod 755 $bindir/metaxaQR_ttt`;
   `chmod 755 $bindir/metaxaQR_dc`;
   `chmod 755 $bindir/metaxaQR_si`;

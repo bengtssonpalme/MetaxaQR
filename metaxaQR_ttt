@@ -1,0 +1,436 @@
+#!/usr/bin/perl
+# Metaxa Taxonomic Traversal Tool
+$app_title     = "MetaxaQR Taxonomic Traversal Tool -- Processes Taxonomic Output From Metaxa";
+$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
+$app_version   = "3.0 b1";
+$app_message   = "";
+# ----------------------------------------------------------------- #
+
+# License information
+$license =
+"    metaxaQR_ttt -- MetaxaQR Taxonomic Traversal Tool -- Processes Taxonomic Output From MetaxaQR\
+    Copyright (C) 2013-2018 Johan Bengtsson-Palme\
+\
+    This program is free software: you can redistribute it and/or modify\
+    it under the terms of the GNU General Public License as published by\
+    the Free Software Foundation, either version 3 of the License, or\
+    (at your option) any later version.\
+\
+    This program is distributed in the hope that it will be useful,\
+    but WITHOUT ANY WARRANTY; without even the implied warranty of\
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\
+    GNU General Public License for more details.\
+\
+    You should have received a copy of the GNU General Public License\
+    along with this program, in a file called 'license.txt'\
+    If not, see: http://www.gnu.org/licenses/.\
+";
+
+## BUGS:
+$bugs = "New features in this version ($app_version):\
+- None\
+\
+Fixed bugs in this version ($app_version):\
+- None\
+\
+Known bugs in this version ($app_version):\
+- None\
+";
+
+## OPTIONS:
+$options = "\
+-i {file} : MetaxaQR taxonomy output file to process (*.taxonomy.txt)\
+-o {file} : Base for the name of output file(s)\
+
+Sequence selection options:\
+-t {b, bacteria, a, archaea, e, eukaryota, m, mitochondrial, c, chloroplast, A, all, o, other} : Include only classifications of this type(s)\
+             (several can be comma-separated), default is all\
+-r {value} : Reliability cutoff, entries below cutoff will be classified as 'unknown', default = 0\
+-l {value} : Length cutoff (in bp) of best hit, entries below cutoff will be classified as 'unknown', default = 50\
+-d {value} : Identity cutoff of best hit (in percent), entries below cutoff will be classified as 'unknown', default = 0\
+-m {integer} : Maximum resolution level for taxonomic traversal, zero is unlimited, default = 0\
+-n {integer} : Minimum resolution level for taxonomic traversal, starting at level 1, default = 1\
+-s {T or F} : Investigate only the last taxonomic level (in good cases species resolution), default is off (F)\
+--remove_na {T or F} : Set sequence entries with no blast hits to 'Unknown', default is on (T)\
+
+Output options:\
+--summary {T or F} : Summary of results output, on (T) by default\
+--lists {T or F} : Output lists of counts for different taxa, one for each traversal level, on (T) by default\
+--separate {T or F} : Outputs the taxonomy file, but separated for the different origins, off (F) by default\
+--unknown {T or F} : Outputs a list of entries designated as unknowns, with their statistics, off (F) by default\
+
+-h : displays this help message\
+--help : displays this help message\
+--bugs : displays the bug fixes and known bugs in this version of MetaxaQR\
+--license : displays licensing information\
+";
+
+
+## Print title message
+print STDERR "$app_title\nby $app_author\nVersion: $app_version\n$app_message";
+print STDERR "-----------------------------------------------------------------\n";
+
+## Setup default variable values
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+
+$bindir = $0;
+$bindir =~ s/_c\$//;
+$input = "";
+$output = "metaxa_ttt_out";
+$type = "all";
+$C = 0;
+$L = 50;
+$D = 0;
+$M = 0;
+$N = 1;
+$S = 0;
+$include_na = 0;
+$out_sum = 1;
+$out_sep = 0;
+$out_unk = 0;
+$out_lists = 1;
+$debug = 0;
+
+## Read command-line options
+for ($i = 0; $i <= scalar(@ARGV); $i++) {   # Goes through the list of arguments
+  $arg = @ARGV[$i];   # Stores the current argument in $arg
+
+  if ($arg eq "-i") {   # Read input files from -i flag
+    $i++;
+    $input = @ARGV[$i];
+  }
+  if ($arg eq "-o") {   # Read output files from -o flag
+    $i++;
+    $output = @ARGV[$i];
+  }
+
+  if ($arg eq "-t") {   # Select what types of rRNAs to look for using the -t flag
+    $i++;
+    $type = @ARGV[$i];
+    if ($type ne "all") {
+      $type = "," . $type;
+    }
+  }
+  if ($arg eq "-r") {   # Set the reliability cutoff using the -r flag
+    $i++;
+    $C = @ARGV[$i];
+  }
+  if ($arg eq "-l") {   # Set the length cutoff using the -l flag
+    $i++;
+    $L = @ARGV[$i];
+  }
+  if ($arg eq "-d") {   # Set the identity cutoff using the -d flag
+    $i++;
+    $D = @ARGV[$i];
+  }
+  if ($arg eq "-m") {   # Set the maximum level using the -m flag
+    $i++;
+    $M = @ARGV[$i];
+  }
+  if ($arg eq "-n") {   # Set the minimum level using the -n flag
+    $i++;
+    $N = @ARGV[$i];
+  }
+
+  if ($arg eq "-s") {   # Set the species classification
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Ff0]/) {   # Check if argument begins with "F", "f", or "0"
+      $S = 0;
+    } else {
+      $S = 1;
+    }
+  }
+
+  if ($arg eq "--remove_na") {   # Determine whether or not to remove N/A entries based on the --remove_na flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $include_na = 0;
+    } else {
+      $include_na = 1;
+    }
+  }
+
+
+  if ($arg eq "--summary") {   # Determine whether or not to output a summary based on the --summary flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sum = 1;
+    } else {
+      $out_sum = 0;
+    }
+  }
+  if ($arg eq "--lists") {   # Determine whether or not to output lists at different levels based on the --lists flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_lists = 1;
+    } else {
+      $out_lists = 0;
+    }
+  }
+  if ($arg eq "--separate") {   # Determine whether or not to separate input file based on the --separate flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_sep = 1;
+    } else {
+      $out_sep = 0;
+    }
+  }
+  if ($arg eq "--unknown") {   # Determine whether or not to output a list of unknowns based on the --unknown flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $out_unk = 1;
+    } else {
+      $out_unk = 0;
+    }
+  }
+  if ($arg eq "--silent") {   # Determine whether or not to output anything to the screen based on the --silent flag
+    $i++;
+    if (substr(@ARGV[$i],0,1) =~ m/^[Tt1]/) {   # Check if argument begins with "T", "t", or "1"
+      $silent = 1;
+    } else {
+      $silent = 0;
+    }
+  }
+
+  ## If "-h" or "--help" are among the options, output usage data and options
+  if (($arg eq "-h") || ($arg eq "--help")) {
+    print "Usage: metaxaQR_ttt -i <input file> -o <output file>\nOptions:$options";
+    print "-----------------------------------------------------------------\n";
+    exit;   # Exit MetaxaQR
+  }
+  ## If "--bugs" is among the options, output bugs and features information
+  if ($arg eq "--bugs") {
+    print "$bugs\n";
+    exit;
+  }
+
+  ## If "--license" is among the options, output license information
+  if ($arg eq "--license") {
+    print "$license\n";
+    exit;   # Exit MetaxaQR
+  }
+
+  if ($arg eq "--debug") {   # Run MetaxaQR in debug mode
+    $debug = 1;
+  }
+}
+
+if ($input eq "") {   # If the input is empty, then show an error message and exit MetaxaQR
+  print STDERR "FATAL ERROR :: You have not specified an input file (-i option)!\
+This error is fatal, and metaxaQR_ttt will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+## Create a summary file
+$now = localtime;
+if ($out_sum == 1) {   # If summary output is on
+  open (SUMMARY, ">$output.taxonomy.summary.txt");   # Create the summary file
+  print SUMMARY "MetaxaQR_ttt run started at $now.\n";   # Output the starting time for the analysis
+  print SUMMARY "-----------------------------------------------------------------\n";
+}
+
+## Load input file
+open (INPUT, $input);
+chomp(@input = <INPUT>);
+close INPUT;
+
+if (scalar(@input) == 0) {   # If the input file is empty, then show an error message and exit MetaxaQR
+  print STDERR "FATAL ERROR :: The input file ($input) does not exist (or is empty)!\
+This error is fatal, and metaxaQR_ttt will now abort.\n";
+  print STDERR "-----------------------------------------------------------------\n";
+  exit;
+}
+
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY "Will process " . scalar(@input) . " entries...\n";   # Output progress
+}
+
+if ($out_sep == 1) {  # If output should be separated
+  open (ARCH, ">$output.archaea.taxonomy.txt");  # Open the archaea output file
+  open (BACT, ">$output.bacteria.taxonomy.txt");  # Open the bacteria output file
+  open (EUK, ">$output.eukaryota.taxonomy.txt");  # Open the eukaroyta output file
+  open (CHLORO, ">$output.chloroplasts.taxonomy.txt");  # Open the chloroplasts output file
+  open (MITO, ">$output.mitochondria.taxonomy.txt");  # Open the mitochondria output file
+}
+
+if ($out_unk == 1) {  # If unknown list should be written
+  open (UNKNOWN, ">$output.unknown.txt");  # Open the unknown list output file
+}
+
+$maxLevel = 0;  # Set max-level to zero
+$unknown = 0;  # Set the unknown counter to zero
+## Preprocess input file, and filter out sequences not passing cutoffs
+foreach $entry (@input) {  # Go through all entries
+  if ((substr($entry,0,1) ne " ") && (substr($entry,0,1) ne "\t")) {  # If this line does start with a sequence ID
+    ($id, $tax, $identity, $length, $reliability) = split('\t', $entry);  # Split the line
+    if ($out_sep == 1) {  # If output should be separated
+      if (substr($tax,0,1) eq "A") {
+	print ARCH $entry . "\n";
+      }
+      if (substr($tax,0,1) eq "B") {
+	print BACT $entry . "\n";
+      }
+      if (substr($tax,0,1) eq "E") {
+	print EUK $entry . "\n";
+      }
+      if (substr($tax,0,1) eq "C") {
+	print CHLORO $entry . "\n";
+      }
+      if (substr($tax,0,1) eq "M") {
+	print MITO $entry . "\n";
+      }
+    }
+    if (($identity eq "N/A") && ($include_na == 1)) {
+        # Don't modify tax
+    } else {
+      if ($identity < $D) {  # If the identity is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+      if ($length < $L) {  # If the length is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+      if ($reliability < $C) {  # If the reliability is below the cutoff
+	$tax = "Unknown";  # Set the taxonomy to "unknown"
+      }
+    }
+    if ($tax eq "Unknown") {  # If this entry is classified as unknown
+      $unknown++;  # Add one to the unknown counter
+      if ($out_unk == 1) {  # If unknown list should be written
+	print UNKNOWN $entry . "\n";
+      }
+    }
+    $included = 0;  # Set the included indicator to false
+    @tax = split(';',$tax);  # Get the taxonomy
+    if ($S == 1) {  # If "species" level classification only
+      $tax = @tax[-1];  # The taxonomy is only the last level of the tax tree
+    }
+    if ($type ne "all") {  # If only some types should be considered
+      if (($type =~ m/,a/) && (@tax[0] eq "Archaea")) { # If archaea are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,b/) && (@tax[0] eq "Bacteria")) { # If bacteria are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,c/) && (@tax[0] eq "Chloroplast")) { # If chloroplasts are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,e/) && (@tax[0] eq "Eukaryota")) { # If eukaryota are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,m/) && (@tax[0] eq "Mitochondria")) { # If mitochondria are included among the types, and this is such a sequence
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+      if (($type =~ m/,o/) && ($included == 0)) { # If other types are included among the types, and this has not been included in another category
+	push(@entries,$tax);  # Add this entry
+	$included = 1;   # Indicate that the entry was included
+      }
+    } else {
+      push(@entries,$tax);  # Add this entry
+      $included = 1;   # Indicate that the entry was included
+    }
+    
+    if ($included == 1) {  # If this entry was included
+      if (scalar(@tax) > $maxLevel) {  # If the number of taxonomy levels is higher for this entry than the previous max
+	$maxLevel = scalar(@tax);  # Set the max to this number of levels
+      }
+    }
+  }
+}
+
+if ($out_unk == 1) {  # If unknown list should be written
+  close UNKNOWN;
+}
+
+if ($out_sep == 1) {  # If output should be separated, close files
+  close (ARCH);
+  close (BACT);
+  close (EUK);
+  close (CHLORO);
+  close (MITO);
+}
+
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY scalar(@entries) . " entries passed type filtering,\n";   # Output progress
+  print SUMMARY "of which $unknown are regarded unknown.\n";   # Output progress
+  print SUMMARY "Maximum taxonomic depth is $maxLevel.\n";   # Output progress
+  print SUMMARY "-----------------------------------------------------------------\n";
+}
+
+if ($M == 0) {  # If there's no limit to the maximum level
+  $endLevel = $maxLevel;  # Set the end level to the max level
+}
+if ($M > 0) {  # If there's a limit to the maximum level
+  if ($maxLevel < $M) {  # If the max level is lower than the limit
+    $endLevel = $maxLevel;  # Set the end level to the max level
+  } else {  # If the max level is higher than the limit
+    $endLevel = $M;  # Set the end level to the limit
+  }
+}
+
+if ($S == 1) {  # If "species" level classification only
+  $N = 1;  # Only process level 1
+  $endLevel = 1;  # Which is the only level there is
+}
+
+## Traverse taxonomy at different levels...
+for ($level = $N; $level <= $endLevel; $level++) {  # Go through all specified taxonomic levels
+  if ($out_lists == 1) {  # If list output is on
+    open (LIST, ">$output.level_$level.txt");  # Open the output file
+  }
+  if ($out_sum == 1) {   # If summary output is on
+    print SUMMARY "Statistics for level $level:\n";   # Output progress
+  }
+
+  ## Gather taxa information
+  undef %taxa;  # Undef the taxa hash
+  $unclassed = 0;  # Set unclassed counter to zero
+  foreach $tax (@entries) {  # Go through all the entries
+    @tax = split(';',$tax);  # Split the taxonomy
+    if (scalar(@tax) < $level) {  # If this entry don't have a classification at this level
+      if ($tax ne "Unknown") {  # If this is not completely unknown
+	push(@tax,"Unclassified " . @tax[-1]);  # Add an unclassified identitifier
+      }
+      $unclassed++;  # Add one to the number of unclassified
+    }
+    $leveltax = "";   # Empty the tax data for this entry
+    for ($i = 0; $i < $level; $i++) {  # Get data for all levels up to current level
+      $leveltax = $leveltax . @tax[$i] . ";";  # Add the current level to the tax data
+    }
+    $leveltax = substr($leveltax,0,length($leveltax) - 1);  # Remove the last semicolon of leveltax
+    if (exists($taxa{$leveltax})) {  # If the entry for this taxa exists
+      $taxa{$leveltax} = $taxa{$leveltax} + 1;  # Add one to the counts of it
+    } else {  # Otherwise...
+      $taxa{$leveltax} = 1;  # ... set the count to one
+    }
+  }
+  
+  ## Output taxa information
+  if ($out_lists == 1) {  # If list output is on
+    foreach $taxkey (sort(keys(%taxa))) {
+      print LIST $taxkey . "\t" . $taxa{$taxkey} . "\n";
+    }
+    close LIST;
+  }
+  if ($out_sum == 1) {   # If summary output is on
+    print SUMMARY "  Number of taxa :       \t" . scalar(keys(%taxa)) . "\n";   # Output progress
+    print SUMMARY "  Number of unclassified:\t" . $unclassed . "\n";   # Output progress
+    print SUMMARY "  Mean group size:       \t" . scalar(@entries) / scalar(keys(%taxa)) . "\n";   # Output progress
+  }
+  
+}
+
+
+## Finish and write summary and close files
+$now = localtime;
+if ($out_sum == 1) {   # If summary output is on
+  print SUMMARY "-----------------------------------------------------------------\n";
+  print SUMMARY "MetaxaQR_ttt run ended at $now.\n";   # Output the starting time for the analysis
+  close SUMMARY;
+}
+
