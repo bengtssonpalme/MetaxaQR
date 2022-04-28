@@ -77,19 +77,19 @@ if ($su == 1) {
   `sudo chmod 755 $bindir/metaxaQR_si`;
   `sudo chmod 755 $bindir/metaxaQR_rf`;
   `sudo chmod 755 $bindir/metaxaQR_uc`;
-  `sudo chmod 755 $bindir/metaxaQR_install_databases`;
+  `sudo chmod 755 $bindir/metaxaQR_install_database`;
   `sudo chmod 755 $bindir/get_fasta`;
 } else {
   `chmod 755 $bindir/metaxaQR`;
   `chmod 755 $bindir/metaxaQR_x`;
   `chmod 755 $bindir/metaxaQR_c`;
-  `chmod 755 $bindir/metaxaQR_dbb`
+  `chmod 755 $bindir/metaxaQR_dbb`;
   `chmod 755 $bindir/metaxaQR_ttt`;
   `chmod 755 $bindir/metaxaQR_dc`;
   `chmod 755 $bindir/metaxaQR_si`;
   `chmod 755 $bindir/metaxaQR_rf`;
   `chmod 755 $bindir/metaxaQR_uc`;
-  `chmod 755 $bindir/metaxaQR_install_databases`;
+  `chmod 755 $bindir/metaxaQR_install_database`;
   `chmod 755 $bindir/get_fasta`;
 }
 
@@ -117,9 +117,9 @@ print "Do you want to download the SSU database for MetaxaQR? [yes/no, default =
 chomp($ssu_db = <STDIN>);
 if (substr($ssu_db,0,1) eq "y") {
   if ($su == 1) {
-    `sudo metaxaQR_install_databases -g SSU`;
+    `sudo metaxaQR_install_database -g SSU`;
   } else {
-    `metaxaQR_install_databases -g SSU`;
+    `metaxaQR_install_database -g SSU`;
   }
 }
 
