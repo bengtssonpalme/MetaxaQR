@@ -1,18 +1,18 @@
 # MetaxaQR
 MetaxaQR: Accurate classification and curation of current and future DNA barcodes
 
-Version: 3.0 d1
-**NOTE THAT THIS IS A DEVELOPMENT VERSION OF METAXAQR!**
+Version: 3.0 b1
+**NOTE THAT THIS IS A BETA VERSION OF METAXAQR!**
 
-Copyright (C) 2011-2021 Johan Bengtsson-Palme et al.
+Copyright (C) 2011-2022 Johan Bengtsson-Palme et al.
 
 Contact: Johan Bengtsson-Palme, johan.bengtsson-palme[at]microbiology.se
 
 A very quick installation guide follows below.
 
-Metaxa2 requires Perl, HMMER3, Vsearch and MAFFT to function properly. Python is required for the MetaxaQR Database builder.
+Metaxa2 requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly. Python is required for the MetaxaQR Database builder.
 
-1) Perl is usually installed on Unix-like systems by default. If not, it can be retrieved from http://www.perl.org/
+1) Perl and Python usually installed on Unix-like systems by default. If not, it can be retrieved from http://www.perl.org/ and https://www.python.org/
 
 2) HMMER3 can be found at http://hmmer.org/download.html
 Download it and follow the on site instructions for installation.
@@ -26,15 +26,11 @@ Download the package for your operating system, and follow the installation inst
 5) Obtain the MetaxaQR package from https://github.com/bengtssonpalme/MetaxaQR/
 Unpack the package (if needed) and move it to your desired directory.
 
-6) Make sure to make the following files executable (for example by `chmod 755 FILENAME`):
+6) Install MetaxaQR by running the script ./install_metaxaQR (or alternatively by copying all the files beginning with "metaxaQR", the "metaxaQR_dbb"  and "src" directories and the file "get_fasta" into your preferred bin directory)
 
-`get_fasta, metaxaQR, metaxaQR_c, metaxaQR_install_database, metaxaQR_x`
+7) To test if MetaxaQR was successfully installed type "metaxaQR --help" on the command-line. You should now see the MetaxaQR help message.
 
-7) Make sure to add the directory MetaxaQR is located in to your `$PATH`.
-
-8) To test if MetaxaQR was successfully installed type `metaxaQR --help` on the command-line. You should now see the MetaxaQR help message.
-
-9) Download the SSU database from the MetaxaQR Database Repository to get started:
+8) Download the SSU database from the MetaxaQR Database Repository to get started:
 `metaxaQR_install_database -g SSU`
 
 To run MetaxaQR, you need a FASTA-formatted input file. To check for SSU rRNA sequences in a FASTA file, type `metaxaQR -i file.fasta -o test -g SSU` on the command line. If you are on a multicore machine, you might want to use the `--cpu 2` option to speed up the processes by using two (or more) cores.
