@@ -18,7 +18,7 @@ Metaxa2 requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly. P
 Download it and follow the on site instructions for installation.
 
 3) Vsearch can be downloaded from https://github.com/torognes/vsearch
-Download it and follow the on site instructions for installation.
+Download it and follow the on site instructions for installation. Make sure to use a vsearch version >2.5.1 for MetaxaQR compatibility.
 
 4) MAFFT can be obtained from http://mafft.cbrc.jp/alignment/software/
 Download the package for your operating system, and follow the installation instructions on the download page. If you do not have admin privileges on your machine, take a look at these instructions: http://mafft.cbrc.jp/alignment/software/installation_without_root.html
