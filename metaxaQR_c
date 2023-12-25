@@ -2,7 +2,7 @@
 # MetaxaQR Classifier
 $app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b1";
+$app_version   = "3.0 b2";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
@@ -28,10 +28,11 @@ $license =
 
 ## BUGS:
 $bugs = "New features in this version ($app_version):\
-- Entirely new classification method\
+- Slightly changed reliability score model to be more conservative with short sequences\
+- Entirely new classification method (b1)\
 \
 Fixed bugs in this version ($app_version):\
-- None\
+- Fixed a bug penalizing very long sequences that ran outside of the targeted barcoding gene\
 \
 Known bugs in this version ($app_version):\
 - None\
@@ -671,9 +672,9 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     if ($reference ne "") {
       ## Perform vsearch search against reference database
       if ($masking == 1) {
-	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
+	      `vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask dust --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
       } else {
-	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
+	      `vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
       }
       
     }
@@ -703,6 +704,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
   $udb = $blastDB . ".udb";
   $tree = $blastDB . ".tree";
   $repr = $blastDB . ".repr";
+  $lendb = $blastDB . ".len";
   
   print STDERR "Reading tree database...\n";
   open (TREE, $tree);
@@ -726,8 +728,17 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
   }
   $mqr_genetype = $label;
   $mqr_genetype =~ s/MQR_//;
-  $mqr_genetype =~ s/_100.*//;
+  $mqr_genetype =~ s/_[0-9][0-9].*//;
   close REPR;
+
+  print STDERR "Reading len database...\n";
+  open (LEN, $reprlendb);
+  while ($line = <LEN>) {
+    chomp($line);
+    ($label, $dblen) = split('\t', $line);
+    $dblens{$label} = $dblen;
+  }
+  close LEN;
   
   ## Set up output files
   if ($filenumber == 1) {
@@ -936,9 +947,11 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	      $mqr_tax = $taxdata{$split_tree};
 	    }
 	  }
-
+    print DEBUG $mqr_tree . "\n";
+    print DEBUG $split_at . "\n";
+    print DEBUG $split_tree . "\n";
 	  print DEBUG $line . "\n";
-	  print DEBUG $mqr_tax . "\n";
+	  print DEBUG $mqr_tax . "\t" . $mqr_label . "\t" . $mqr_id_level . "\n";
 
 	  if ($common_tax eq "") {
 	    if (substr($mqr_tax, -1, 1) eq ";") {
@@ -952,10 +965,10 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	      $new_common_tax = $common_tax;
 	    } else {
 	      for ($c = length($common_tax); $c > 0; $c--) {
-		if ((substr($common_tax, 0, $c) eq substr($mqr_tax . ";", 0, $c)) && (substr($common_tax, $c-1, 1) eq ";")) {
-		  $new_common_tax = substr($common_tax, 0, $c);
-		  last;
-		}
+		      if ((substr($common_tax, 0, $c) eq substr($mqr_tax . ";", 0, $c)) && (substr($common_tax, $c-1, 1) eq ";")) {
+		        $new_common_tax = substr($common_tax, 0, $c);
+		        last;
+		      }
 	      }
 	    }
 	    if (substr($new_common_tax, -1, 1) eq ";") {
@@ -982,9 +995,13 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	$rDLen = $rQLen - $rMLen; # Calculate the non-matched length of the sequence
 	#    $rMScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rMLen ** ($rID ** 1.1) ) ) ) ) );
 	#    $rDScore = 1 - 10 ** (-1 * ( ($rID ** 2) / (1.0005 ** (-1 * ($rDLen ** ($rID ** 1.1) ) ) ) ) );
-	$rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rMLen));
+	$rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rMLen));
 	if ($rDLen > 0) {
-	  $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (500 / $rDLen));
+	  if ($rMLen < $dblens{$subject} * 0.95) {
+	    $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen));
+	  } else {
+	    $rDScore = 0;
+	  }
 	} else {
 	  $rDScore = 0;
 	}
@@ -1475,4 +1492,4 @@ sub findIDLevel {
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - May 2022
+## //Johan Bengtsson-Palme, December 2010 - October 2022

@@ -143,10 +143,12 @@ if ($gene eq "") {
       if ($version eq "") {
 	$getfile = $filename;
 	$dbname = $name;
+	last;
       } else {
 	if ($version eq $dbversion) {
 	  $getfile = $filename;
 	  $dbname = $name;
+	  last;
 	}
       }
     } 
