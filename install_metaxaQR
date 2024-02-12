@@ -60,9 +60,11 @@ print "Installing MetaxaQR in $bindir...\n";
 if ($su == 1) {
   `sudo cp -r metaxaQR* $bindir`;
   `sudo cp get_fasta $bindir`;
+  `sudo cp -r src $bindir`;
 } else {
   `cp -r metaxaQR* $bindir`;
   `cp get_fasta $bindir`;
+  `cp -r src $bindir`;
 }
 
 
