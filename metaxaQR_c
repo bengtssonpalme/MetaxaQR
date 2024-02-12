@@ -9,7 +9,7 @@ $app_message   = "";
 # License information
 $license =
   "    metaxaQR_c -- MetaxaQR Classifier -- Classifies (predicted) barcoding genes\
-    Copyright (C) 2011-2023 Johan Bengtsson-Palme & Sebastian Wettersten\
+    Copyright (C) 2011-2024 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -33,6 +33,7 @@ $bugs = "New features in this version ($app_version):\
 \
 Fixed bugs in this version ($app_version):\
 - Fixed a bug resulting in overconfident predictions of certain input sequences distantly related to reference sequences in the database\
+- Changed a reverse complement read behaviour that resulted in inverted reads to be written to output\
 \
 Known bugs in this version ($app_version):\
 - None\
@@ -544,10 +545,10 @@ if ($inputIsPaired == 1) {
       if ($seq ne "") {
 	($fw, $cseq) = split('NNN*', $seq);
 	
-	$cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
-	$cseq =~ s/[^A-Z]//g; # Remove all non-alphabetic characters
-	$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
-	$rev = reverse($cseq);
+	#$cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+	#$cseq =~ s/[^A-Z]//g; # Remove all non-alphabetic characters
+	#$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+	#$rev = reverse($cseq);
 	
 	print NEWIN ">" . $id . "+_1 " . $header . "\n";
 	print NEWIN $fw . "\n";
@@ -569,10 +570,10 @@ if ($inputIsPaired == 1) {
     
   if ($seq ne "") {
     ($fw, $cseq) = split('NNN*', $seq);
-    $cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
-    $cseq =~ s/[^A-Z]//g;	# Remove all non-alphabetic characters
-    $cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
-    $rev = reverse($cseq);
+    #$cseq =~ tr/[a-z]/[A-Z]/;	# Make all letters uppercase
+    #$cseq =~ s/[^A-Z]//g;	# Remove all non-alphabetic characters
+    #$cseq =~ tr/ACGTURYSWKMBDHVN/TGCAAYRWSMKVHDBN/; # Replace all characters with its complementary base
+    #$rev = reverse($cseq);
     
     print NEWIN ">" . $id . "+_1 " . $header . "\n";
     print NEWIN $fw . "\n";

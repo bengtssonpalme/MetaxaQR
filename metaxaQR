@@ -1,15 +1,15 @@
 #!/usr/bin/perl
-# Metaxa 3.0 b1
+# Metaxa 3.0 b3
 $app_title     = "MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b1";
+$app_version   = "3.0 b3";
 $app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
 "   MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets\
-    Copyright (C) 2011-2022 Johan Bengtsson-Palme & Sebastian Wettersten\
+    Copyright (C) 2011-2024 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
