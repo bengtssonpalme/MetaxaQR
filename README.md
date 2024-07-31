@@ -1,16 +1,16 @@
 # MetaxaQR
 MetaxaQR: Accurate classification and curation of current and future DNA barcodes
 
-Version: 3.0 b1
+Version: 3.0 b3
 **NOTE THAT THIS IS A BETA VERSION OF METAXAQR!**
 
-Copyright (C) 2011-2022 Johan Bengtsson-Palme et al.
+Copyright (C) 2011-2024 Johan Bengtsson-Palme et al.
 
 Contact: Johan Bengtsson-Palme, johan.bengtsson-palme[at]microbiology.se
 
 A very quick installation guide follows below.
 
-Metaxa2 requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly. Python is required for the MetaxaQR Database builder.
+MetaxaQR requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly. Python is required for the MetaxaQR Database builder.
 
 1) Perl and Python usually installed on Unix-like systems by default. If not, it can be retrieved from http://www.perl.org/ and https://www.python.org/
 
