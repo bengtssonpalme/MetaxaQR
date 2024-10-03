@@ -32,7 +32,7 @@ $bugs = "New features in this version ($app_version):\
 - New default classification databases\
 \
 Fixed bugs in this version ($app_version):\
-- None\
+- Fixed a bug in the genome mode code when processing multi-line FASTA input\
 \
 Known bugs in this version ($app_version):\
 - None\
@@ -1330,39 +1330,39 @@ if ($mode ne "m") {  # Mode is not metagenomic
     chomp($lineA);  # Remove the newline character from the input line
     if ((substr($lineA,0,1) eq ">") || eof(FASTQA)) {  # If the line begins with a ">"
       if (eof(FASTQA)) {
-	$seqA = $lineA;
+	      $seqA = $seqA . uc($lineA);  # Save the nucleotide sequence
       }
       if (($seqA ne "") || (eof(FASTQA))) {  # If this is not the first line of the first file
-	$seqCount++;
-	## Save sequences
-	$lenSeqA = length($seqA);
-	$seqID = $header;
-	$seqID =~ s/ .*//;
-	if (($mode eq "g") && ($lenSeqA > 2500)) {
-	  $frg = 0;
-	  for ($b = 0; $b < $lenSeqA - 2499; $b = $b + 2500) {
-	    $frg++;
-	    $totalFrg++;
-	    $cutStart = $b;
-	    $cutEnd = $b + 5000;
-	    $cutLen = 5000;
-	    if ($cutEnd > $lenSeqA) {
-	      $cutEnd = $lenSeqA;
-	      $cutLen = $cutEnd - $cutStart;
-	    }
+	      $seqCount++;
+	      ## Save sequences
+	      $lenSeqA = length($seqA);
+	      $seqID = $header;
+	      $seqID =~ s/ .*//;
+	      if (($mode eq "g") && ($lenSeqA > 2500)) {
+	        $frg = 0;
+	        for ($b = 0; $b < $lenSeqA - 2499; $b = $b + 2500) {
+	          $frg++;
+	          $totalFrg++;
+	          $cutStart = $b;
+	          $cutEnd = $b + 5000;
+	          $cutLen = 5000;
+	          if ($cutEnd > $lenSeqA) {
+	            $cutEnd = $lenSeqA;
+	            $cutLen = $cutEnd - $cutStart;
+	          }
 	    
-	    print FASTA $seqID . "_FRAGMENT_" . $frg . ":" . $cutStart . "-" . $cutEnd . "\n";  # Write the header to the FASTA file
-	    print FASTA substr($seqA, $cutStart, $cutLen) . "\n";  # Write the sequence to the FASTA file
+	          print FASTA $seqID . "_FRAGMENT_" . $frg . ":" . $cutStart . "-" . $cutEnd . "\n";  # Write the header to the FASTA file
+	          print FASTA substr($seqA, $cutStart, $cutLen) . "\n";  # Write the sequence to the FASTA file
 	    
-	    if (($totalFrg / 1000000) == int($totalFrg / 1000000)) {
-	      $now = localtime;
-	      print STDERR "$now : Processed $seqCount sequences, producing $totalFrg fragments...\n";
-	    }
-	  }
-	} else {
-	  print FASTA $seqID . "_COMPLETE\n";  # Write the header to the FASTA file
-	  print FASTA $seqA . "\n";  # Write the sequence to the FASTA file
-	}
+	          if (($totalFrg / 1000000) == int($totalFrg / 1000000)) {
+	            $now = localtime;
+	            print STDERR "$now : Processed $seqCount sequences, producing $totalFrg fragments...\n";
+	          }
+	        }
+      	} else {
+	        print FASTA $seqID . "_COMPLETE\n";  # Write the header to the FASTA file
+	        print FASTA $seqA . "\n";  # Write the sequence to the FASTA file
+	      }
       }
       $header = $lineA;  # Read the header
       $seqA = "";  # Empty sequence A
