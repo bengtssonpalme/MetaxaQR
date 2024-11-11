@@ -9,7 +9,7 @@ $app_message   = "";
 # License information
 $license =
 "    metaxaQR_x - MetaxaQR Extractor -- Identifies barcoding genes in (meta)genomic data and extracts them\
-    Copyright (C) 2011-2022 Johan Bengtsson-Palme\
+    Copyright (C) 2011-2024 Johan Bengtsson-Palme\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -34,7 +34,7 @@ Fixed bugs in this version ($app_version):\
 - None\
 \
 Known bugs in this version ($app_version):\
-- None\
+- Paired-end classification capability restored\
 ";
 
 ## OPTIONS:
@@ -616,7 +616,7 @@ if ($input ne "") {   # If an input file is given
 	  $deflinePairInfo = $defItem;
 	}
       }
-      ($sequenceID) = split(" ",substr($sequence,1,60));
+      ($sequenceID) = split(" ",substr($sequence,1,59));
       $mainSeq = "";   # Empty the main sequence entry
       if ($complement == 1) {   # If the complementary file should be written
 	print COMPLEMENT substr($sequence,0,60) . " complement\n";   # Write the definition line of the new sequence to the complement sequence file, limit the defline to 60 characters to avoid BLAST error in classification step
@@ -1747,4 +1747,4 @@ sub hmmerSearch {
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - May 2022
+## //Johan Bengtsson-Palme, December 2010 - November 2024
