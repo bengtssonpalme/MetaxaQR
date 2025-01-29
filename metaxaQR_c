@@ -9,7 +9,7 @@ $app_message   = "";
 # License information
 $license =
   "    metaxaQR_c -- MetaxaQR Classifier -- Classifies (predicted) barcoding genes\
-    Copyright (C) 2011-2024 Johan Bengtsson-Palme & Sebastian Wettersten\
+    Copyright (C) 2011-2025 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -37,6 +37,7 @@ Fixed bugs in this version ($app_version):\
 - Fixed a bug resulting in overconfident predictions of certain input sequences distantly related to reference sequences in the database\
 - Changed a reverse complement read behaviour that resulted in inverted reads to be written to output\
 - Paired-end classification capability restored\
+- Now removes parentheses in taxonomy to avoid pattern matching irregularities\
 \
 Known bugs in this version ($app_version):\
 - None\
@@ -785,6 +786,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
     if ($label =~ m/MQR_.*_100_[0-9]/) { ## THIS NEEDS TO CHANGE WHEN THE MQR IDs ARE UPDATED!
       $labels{$seqID} = $label;
     }
+    $taxonomy =~ s/[()]//g;  ## Remove all parentheses to avoid pattern matching confusion
     $taxdata{$label} = $taxonomy;
   }
   $mqr_genetype = $label;
@@ -1115,7 +1117,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
           }
           if ($philosophy == "liberal") {
             if (length($common_tax) > length($mqr_tax)) {
-              if ($commontax =~ m/$mqr_tax/) {
+              if ($common_tax =~ m/$mqr_tax/) {
                 $new_common_tax = $common_tax;
                 $new_tax_determined = 1;
               }

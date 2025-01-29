@@ -9,7 +9,7 @@ $app_message   = "This program is distributed under the GNU GPL 3 license, use t
 # License information
 $license =
 "   MetaxaQR -- Improved Identification and Classification of barcoding genes in environmental datasets\
-    Copyright (C) 2011-2024 Johan Bengtsson-Palme & Sebastian Wettersten\
+    Copyright (C) 2011-2025 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -37,6 +37,7 @@ Fixed bugs in this version ($app_version):\
 - Fixed a bug in the genome mode code when processing multi-line FASTA input\
 - Fixed several bugs in the processing of paired-end data in FASTA format\
 - Paired-end classification capability restored\
+- Now removes parentheses in taxonomy to avoid pattern matching irregularities\
 \
 Known bugs in this version ($app_version):\
 - None\
