@@ -2,14 +2,14 @@
 # MetaxaQR Extractor
 $app_title     = "MetaxaQR Extractor -- Identifies barcoding genes in (meta)genomic data and extracts them";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b1";
+$app_version   = "3.0 rc1";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
 "    metaxaQR_x - MetaxaQR Extractor -- Identifies barcoding genes in (meta)genomic data and extracts them\
-    Copyright (C) 2011-2024 Johan Bengtsson-Palme\
+    Copyright (C) 2011-2025 Johan Bengtsson-Palme\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -28,7 +28,7 @@ $license =
 
 ## BUGS:
 $bugs = "New features in this version ($app_version):\
-- None (virtually identical to the Metaxa2 2.2.2 extractor)\
+- Updated help prompt\
 \
 Fixed bugs in this version ($app_version):\
 - None\

@@ -1,15 +1,15 @@
 #!/usr/bin/perl
-# Metaxa 3.0 b1
+# Metaxa 3.0 rc1
 $app_title     = "MetaxaQR -- Database installer";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b1";
+$app_version   = "3.0 rc1";
 $app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
 "   MetaxaQR -- Database installer\
-    Copyright (C) 2016-2022 Johan Bengtsson-Palme\
+    Copyright (C) 2016-2025 Johan Bengtsson-Palme\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\

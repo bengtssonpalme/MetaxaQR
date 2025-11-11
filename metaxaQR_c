@@ -2,7 +2,7 @@
 # MetaxaQR Classifier
 $app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b3";
+$app_version   = "3.0 rc1";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
@@ -32,6 +32,7 @@ $bugs = "New features in this version ($app_version):\
 - Entirely new classification method (b1)\
 - Added the query coverage cutoff option (--query_cov) for the vsearch set, with a default of 0.9\
 - Added the ability to change classification philosophy (stringency of classification)\
+- Updated help prompt\
 \
 Fixed bugs in this version ($app_version):\
 - Fixed a bug resulting in overconfident predictions of certain input sequences distantly related to reference sequences in the database\
@@ -56,32 +57,19 @@ Sequence selection options:\
 --mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
 -E {value} : Domain E-value cutoff for a sequence to be included in the output, default = 1\
 -S {value} : Domain score cutoff for a sequence to be included in the output, default = 12\
--M {value} : Number of sequence matches to consider for classification, default = 5 [REMOVED!]\
--R {value} : Reliability cutoff for taxonomic classification, default = 75 [LIKELY TO CHANGE!]\
--T {comma-separated values} : Sets the percent identity cutoff to be classified at a certain taxonomic level [REMOVED!]\
-                              Order of the values is: Kingdom/Domain,Phylum,Class,Order,Family,Genus,Species
-                              Default values are:     0,60,70,75,85,90,97
---scoring_model {new, old} : Selects the scoring model to be used for classification, select 'old' to use the pre 2.2 scoring model, default = new [REMOVED!]\
--H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50 [DEFAULT HAS CHANGED, AND INTERPRETATION OF OPTION HAS ALSO CHANGED!]\
---masking {T or F} : Whether to use masking in the searches or not, off (F) by default [NEW OPTION, coupled to --qmask]\
---query_cov {value} : The query coverage cutoff applied to the vsearch step, default = 0.9 [NEW OPTION]\
---gap_penalty {string} : The gap penalty scores applied to the vsearch step, default = '20I/2E+2I/1E' [NEW OPTION]\
---search_id {value} : The sequence identity cutoff for the vsearch, default = 0.5 [NEW OPTION]\
---search_maxaccepts {value} : Controls the --maxaccepts option of vsearch, default = 4 [NEW OPTION]\
---search_maxrejects {value} : Controls the --maxrejects option of vsearch, default = 32 [NEW OPTION]\
---search_wordsize {value} : The word-size used for the classification, default is 8 [NEW OPTION, coupled to --wordlength]\
---philosophy {liberal, conservative, negligent} : The strignency/philosophy for comparing conflicting classification, default is liberal [NEW OPTION]\
+-R {value} : Reliability cutoff for taxonomic classification, default = 75\
+-H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50\
+--masking {T or F} : Whether to use masking in the searches or not, off (F) by default\
+--query_cov {value} : The query coverage cutoff applied to the vsearch step, default = 0.9\
+--gap_penalty {string} : The gap penalty scores applied to the vsearch step, default = '20I/2E+2I/1E'\
+--search_id {value} : The sequence identity cutoff for the vsearch, default = 0.5\
+--search_maxaccepts {value} : Controls the --maxaccepts option of vsearch, default = 4\
+--search_maxrejects {value} : Controls the --maxrejects option of vsearch, default = 32\
+--search_wordsize {value} : The word-size used for the classification, default is 8\
+--philosophy {liberal, conservative, negligent} : The strignency/philosophy for comparing conflicting classification, default is liberal\
 --reference {file} : A file in FASTA format containing reference sequences to be sent to a separate file in the analysis, default is blank (unused)\
 --ref_identity {value} : The sequence identity cutoff to be considered a sequence to be derived from a reference entry, default = 99\
---blast_eval {value} : The E-value cutoff used in the BLAST search, high numbers may slow down the process, cannot be used with the --blast_score option, default is 1e-5 [REMOVED! SUPPORT FOR BLAST REMOVED]\
---blast_score {value} : The score cutoff used in the BLAST search, low numbers may slow down the process, cannot be used with the --blast_eval option, default is to used E-value cutoff, not score [REMOVED! SUPPORT FOR BLAST REMOVED]\
---blast_wordsize {value} : The word-size used for the BLAST-based classification, default is 14 [REMOVED! SUPPORT FOR BLAST REMOVED]\
 --cpu {value} : the number of CPU threads to use, default is 1\
---megablast {T or F} : Uses megablast for classification for better speed but less accuracy, off (F) by default [REMOVED! SUPPORT FOR BLAST REMOVED]\
---plus {T or F} : Runs blast search through blast+ instead of the legacy blastall engine, off (F) by default [REMOVED! SUPPORT FOR BLAST REMOVED]\
---usearch {version} : Runs usearch instead of blast, specify version, off (0) by default [REMOVED! SUPPORT FOR USEARCH REMOVED]\
---usearch_bin {path} : Specifies the location of the Usearch binary to be used, default is 'usearch' only [REMOVED! SUPPORT FOR USEARCH REMOVED]\
---ublast {T or F} : Runs the Ublast algorithm instead of Usearch algorithm, default is on (T) [REMOVED! SUPPORT FOR USEARCH REMOVED]\
 
 Output options:\
 --summary {T or F} : Summary of results output, on (T) by default\
@@ -89,7 +77,6 @@ Output options:\
 --split_pairs {T or F} : Outputs the two read pairs separately, off (F) by default\
 --table {T or F} : Table format output of sequences containing probable rRNAs, off (F) by default\
 --taxonomy {T or F} : Table format output of probable taxonomic origin for sequences, on (T) by default\
---reltax {T or F} : Output of probable taxonomic origin for sequences with reliability scores at each rank, off (F) by default [REMOVED]\
 --taxlevel {integer} : Force Metaxa to classify sequences at a certain taxonomy level, regardless of reliability score, off (0) by default\
 --align {a, all, u, uncertain, n, none} : Outputs alignments of BLAST matches to query in all, uncertain or no cases, requires MAFFT to be installed, default is 'none'\
 --not_found {T or F} : Saves a list of non-found entries, off (F) by default\
@@ -1194,13 +1181,18 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 
     $confidence = -1;
     $confidence_tax = $mqr_tax;
+    $mqr_full_level = scalar(split(';', $mqr_tax));
     while ($confidence < $C) {
       $tax_branch_level = scalar(split(';', $confidence_tax));
+      $branch_prop = $tax_branch_level / $mqr_full_level;
       ## Calculate match scores based on the matched and non-matched region lengths
-	    $rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rMLen)) / ($tax_branch_level ** 0.5);
+	    #$rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rMLen)) / ($tax_branch_level ** 0.5);
+      $rMScore = (($rID * 0.98) ** (100 / $rMLen)) / (7 * $branch_prop ** 0.75);
 	    if ($rDLen > 0) {
         if ($rMLen < $dblens{$subject} * 0.95) {
-	        $rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen)) / ($tax_branch_level ** 0.5);
+	        #$rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen)) / ($tax_branch_level ** 0.5);
+          #$rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen));
+          $rDScore = (($rID * 0.98) ** (100 / $rDLen)) / (7 * $branch_prop ** 0.75);
         } else {
   	      $rDScore = 0;
         }
@@ -1217,7 +1209,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
         $confidence = 100;
       }
 
-      print DEBUG $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $confidence_tax . "\t" . $mqr_tax . "\t" . $confidence . "\t" . $tax_branch_level . "\n";
+      print DEBUG $query . "\t" . $subject . "\t" .  $mqr_label . "\t" . $identity . "\t" . $confidence_tax . "\t" . $mqr_tax . "\t" . $confidence . "\t" . $tax_branch_level . " ($branch_prop)" . "\n";
       if ($confidence_tax eq "Mismatch") {
         last;
       }

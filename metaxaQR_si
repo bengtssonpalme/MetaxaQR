@@ -2,7 +2,7 @@
 # Metaxa 3.0
 $app_title     = "MetaxaQR Diversity Tools - Species Inference tool";
 $app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 b1";
+$app_version   = "3.0 rc1";
 $app_message   = "This program is distributed under the GNU GPL 3 license, use the --license option for more information on this license.\n";
 # ----------------------------------------------------------------- #
 

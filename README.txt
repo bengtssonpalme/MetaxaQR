@@ -3,13 +3,14 @@ MetaxaQR: Improved Identification and Classification of SSU sequences in Environ
 Source code available at:
 http://microbiology.se/software/metaxaQR
 
-Version: 3.0 b1
+Version: 3.0 rc1
 MetaxaQR -- Identifies taxonomic markers and classifies them
-Copyright (C) 2011-2022 Johan Bengtsson-Palme et al.
+Copyright (C) 2011-2025 Johan Bengtsson-Palme et al.
 Contact: Johan Bengtsson-Palme, johan.bengtsson[at]microbiology.se
 Programmers: Johan Bengtsson-Palme & Sebastian Wettersten
 
-A quick installation guide follows below.
+The easiest way to install MetaxaQR is via conda. 
+A quick installation guide for manual installations follows below.
 
 MetaxaQR requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly.
 
@@ -19,7 +20,7 @@ MetaxaQR requires Perl, Python, HMMER3, Vsearch and MAFFT to function properly.
 Download it and follow the on site instructions for installation.
 
 3) Vsearch can be downloaded from https://github.com/torognes/vsearch
-Follow the instructions at the web site to install. Make sure to use a vsearch version >2.5.1 for MetaxaQR compatibility.
+Follow the instructions at the web site to install
 
 4) MAFFT can be obtained from http://mafft.cbrc.jp/alignment/software/
 Download the package for your operating system, and follow the installation instructions on the download page. If you do not have admin privileges on your machine, take a look at these instructions: http://mafft.cbrc.jp/alignment/software/installation_without_root.html

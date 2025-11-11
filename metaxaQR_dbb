@@ -12,12 +12,12 @@ from src.mqr_db.mqrdb_run import main_mqrdb
 # MetaxaQR Database Builder
 app_title = "MetaxaQR Database Builder -- Automatic database creation for MetaxaQR"
 app_author = "Sebastian Wettersten & Johan Bengtsson-Palme, University of Gothenburg"
-app_version = "3.0 b2"
+app_version = "3.0 rc1"
 # ----------------------------------------------------------------- #
 
 # License information
 license =  "    metaxaQR_dbb - MetaxaQR Database Builder -- Automatic database creation for MetaxaQR\
-    Copyright (C) 2016-2022 Sebastian Wettersten, Johan Bengtsson-Palme & Rodney Richardson\
+    Copyright (C) 2016-2025 Sebastian Wettersten, Johan Bengtsson-Palme & Rodney Richardson\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
