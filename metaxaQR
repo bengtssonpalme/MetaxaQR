@@ -38,7 +38,9 @@ Fixed bugs in this version ($app_version):\
 - Fixed a bug in the genome mode code when processing multi-line FASTA input\
 - Fixed several bugs in the processing of paired-end data in FASTA format\
 - Paired-end classification capability restored\
+- Fixed auto-detection of format for compressed input files\
 - Now removes parentheses in taxonomy to avoid pattern matching irregularities\
+- Fixed a bug ignoring 'SSU' as the default gene\
 \
 Known bugs in this version ($app_version):\
 - None\
@@ -66,7 +68,6 @@ $options = "\
 -1 {file} : DNA FASTQ input file containing the first reads in the read pairs to investigate\
 -2 {file} : DNA FASTQ input file containing the second reads in the pairs to investigate\
 -f {a, auto, f, fasta, q, fastq, p, paired-end, pa, paired-fasta} : Specifies the format of the input file, default = auto\
--z {f, a, auto, gzip, bzip, zip, dsrc} : Specifies the format of the input file, default = f (off)\
 -g {SSU, LSU, string, all} : Specifies the barcoding gene MetaxaQR should look for, several can be specified (comma-separated), default is SSU\
 --pairfile {file} : DNA FASTQ file containing the pairs to the sequences in the input file\
 --format {a, auto, f, fasta, q, fastq, p, paired-end} : Specifies the format of the input file, default = auto\
@@ -155,6 +156,7 @@ $profileDB = "";
 $blastDB = "";
 $type = "all";
 $genes = "SSU";
+(@geneList) = split(',', $genes);
 $E = 1;
 $S = 12;
 $N = 2;
@@ -775,6 +777,18 @@ if ($testTemp =~ m/No such file or directory/) {
 ## If input file format should be guessed, try to guess it!
 if (lc(substr($inputFormat,0,1)) eq "a") {  # If the format should be guessed
   chomp(@inputHeader = `head -10 $input`);  # Read the first ten lines of the input file
+  if (substr($input, -3) eq ".gz") {
+    chomp(@inputHeader = `zcat $input | head -10`);  # Read the first ten lines of the input file
+  }
+  if ((substr($input, -3) eq ".bz") || (substr($input, -4) eq ".bz2")) {
+    chomp(@inputHeader = `bzcat $input | head -10`);  # Read the first ten lines of the input file
+  }
+  if ((lc(substr($input, -4)) eq ".zip") || (lc(substr($input, -5)) eq ".zipx")) {
+    chomp(@inputHeader = `unzip -c $input | head -10`);  # Read the first ten lines of the input file
+  }
+  if (substr($input, -5) eq ".dsrc") {
+    chomp(@inputHeader = `dsrc -s d $input | head -10`);  # Read the first ten lines of the input file
+  }
   foreach $line (@inputHeader) {  # Go through them line by line
     chomp($line);  # Remove the newline character
     if ($line eq "") {  # If the line is empty
@@ -782,29 +796,29 @@ if (lc(substr($inputFormat,0,1)) eq "a") {  # If the format should be guessed
     }
     if (substr($line, 0, 1) eq ">") {  # If the line starts with a ">"
       if ($pairfile ne "") {
-	$inputFormat = "pa";  # Assume paired-end FASTA
+	      $inputFormat = "pa";  # Assume paired-end FASTA
       } else {
-	$inputFormat = "f";  # Assume FASTA format
+	      $inputFormat = "f";  # Assume FASTA format
       }
       last;  # Exit the loop
     }
     if (substr($line, 0, 1) eq "@") {  # If the line starts with a "@"
       if ($pairfile ne "") {
-	$inputFormat = "p";  # Assume paired-end FASTQ format
+	      $inputFormat = "p";  # Assume paired-end FASTQ format
       } else {
-	if (substr(substr($input,-8),0,3) eq "_1.") {  # If the input file name ends with "_1.fastq"
-	  $pairGuess = $input;
-	  $pairGuess =~ s/_1.fastq/_2.fastq/;  # Make a guess of the name of the paired reads file
-	  chomp($pairExists = `head -10 $pairGuess`);  # Read the first ten lines of the guessed pair file (if it exists)
-	  if ($pairExists ne "") {  #  Pair file seems to exist
-	    $inputFormat = "p";  # Assume paired-end FASTQ format
-	    $pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
-	  } else {
-	    $inputFormat = "q";  # Assume FASTQ format
-	  }
-	} else {
-	  $inputFormat = "q";  # Assume FASTQ format
-	}
+	      if (substr(substr($input,-8),0,3) eq "_1.") {  # If the input file name ends with "_1.fastq"
+	        $pairGuess = $input;
+	        $pairGuess =~ s/_1.fastq/_2.fastq/;  # Make a guess of the name of the paired reads file
+	        chomp($pairExists = `head -10 $pairGuess`);  # Read the first ten lines of the guessed pair file (if it exists)
+	        if ($pairExists ne "") {  #  Pair file seems to exist
+	          $inputFormat = "p";  # Assume paired-end FASTQ format
+	          $pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
+	        } else {
+	          $inputFormat = "q";  # Assume FASTQ format
+	        }
+	      } else {
+	        $inputFormat = "q";  # Assume FASTQ format
+	      }
       }
       last;  # Exit the loop
     }
@@ -825,12 +839,12 @@ if (lc(substr($inputFormat,0,1)) eq "a") {  # If the format should be guessed
       $pairGuess =~ s/_1.fastq/_2.fastq/;  # Make a guess of the name of the paired reads file
       chomp($pairExists = `head -10 $pairGuess`);  # Read the first ten lines of the guessed pair file (if it exists)
       if ($pairExists ne "") {  #  Pair file seems to exist
-	$pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
+	      $pairfile = $pairGuess;  # Set the pair file to Metaxa's guess
       } else {
-	print STDERR "FATAL ERROR :: The specified paired-end input file could not be found.\
+	      print STDERR "FATAL ERROR :: The specified paired-end input file could not be found.\
 Metaxa will now abort.\n";
-	print STDERR "-----------------------------------------------------------------\n";
-	exit;
+	      print STDERR "-----------------------------------------------------------------\n";
+	      exit;
       }
     }
   }
