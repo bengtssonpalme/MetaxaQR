@@ -692,6 +692,9 @@ $tempName = "metaxa_temp_directory__$output";   # Setup a temporary directory va
 $tempName =~ s./.-.g;   # Remove any potential slashes in the output name (as this will confuse Metaxa's file naming)
 $tempDir = $tempDir . "/" . $tempName;
 
+(@outputFilePath) = split('/',$output);  #Identify the name for the output files
+$outputFileName = @outputFilePath[-1];  # The last item of the path is the file name
+
 $inputFileName = $input;
 $inputFileName =~ s-^.*/--;
 
@@ -1498,34 +1501,34 @@ If you want to only use the HMMER-based extraction capabilities, use the metaxaQ
     
     if ($hmmscan eq "") {   # If no pre-computed hmmscan file is supplied, call metaxa_x (the Metaxa Extractor)
       if ($search_score eq "") {   # If E-value cutoff is used instead of score cutoff, use this command:
-	`$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_eval "$search_eval" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+	      `$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$outputFileName" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_eval "$search_eval" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
       } else {   # If score cutoff is used instead of E-value cutoff, use this command:
-	`$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder" --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_score "$search_score" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+	      `$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$outputFileName" -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder" --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --search_score "$search_score" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
     }
-    } else {   # If a pre-computed hmmscan file is supplied, send it on to metaxa_x (the Metaxa Extractor)
-      `$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$output" --hmmscan $hmmscan -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
-    }
-  } else {  ## Convert input files for use with classifier
-    $H = 0;
-    $now = localtime;
-    if ($silent == 0) {
-      print STDERR "$now : Preparing input files for classification...\n";
-    }
-    open (INPUT, $input);
-    open (FASTA, ">$tempDirGene/$output.extraction.fasta");   # Create a FASTA output file for found sequences
-    $seqDNA = "";
-    while ($line = <INPUT>) {
-      chomp($line);
-      if (substr($line, 0, 1) eq ">") {
-	if ($seqDNA ne "") {
-	  $seqDNALength = length($seqDNA);
-	  print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
-	  print FASTA  $seqDNA . "\n";   # Write DNA sequence
-	}
-	$seqID = substr($line,1,60);
-	$seqDNA = "";
+      } else {   # If a pre-computed hmmscan file is supplied, send it on to metaxa_x (the Metaxa Extractor)
+        `$bindir/metaxaQR_x -i "$input" -o "$tempDirGene/$outputFileName" --hmmscan $hmmscan -p "$profileDB" -t "$type" -g "$gene" -E "$E" -S "$S" -N "$N" --selection_priority "$priority" --allow_single_domain "$allow_single_E,$allow_single_score" --allow_reorder "$allow_reorder"  --complement "$complement" --cpu "$cpu" --multi_thread "$multi_thread" --heuristics "$heuristics" --summary "$out_sum" --graphical "$out_graph" --fasta "$out_fasta" --table "$out_table" --not_found "$out_not" --truncate "$truncate" --silent "$silent" --graph_scale "$graph_scale" --mode "$mode" --reset "$reset" --temp "$tempDirGene" --pipeline`;
+      }
+    } else {  ## Convert input files for use with classifier
+      $H = 0;
+      $now = localtime;
+      if ($silent == 0) {
+        print STDERR "$now : Preparing input files for classification...\n";
+      }
+      open (INPUT, $input);
+      open (FASTA, ">$tempDirGene/$outputFileName.extraction.fasta");   # Create a FASTA output file for found sequences
+      $seqDNA = "";
+      while ($line = <INPUT>) {
+        chomp($line);
+        if (substr($line, 0, 1) eq ">") {
+	        if ($seqDNA ne "") {
+	          $seqDNALength = length($seqDNA);
+	          print FASTA ">" . $seqID . "|O Non-extracted sequence (" . $seqDNALength . " bp) on main strand\n";   # Write FASTA definition line
+	          print FASTA  $seqDNA . "\n";   # Write DNA sequence
+	        }
+	      $seqID = substr($line,1,60);
+	    $seqDNA = "";
       } else {
-	$seqDNA = $seqDNA . $line;
+	      $seqDNA = $seqDNA . $line;
       }
     }
     if ($seqDNA ne "") {
@@ -1548,7 +1551,7 @@ If you want to only use the HMMER-based extraction capabilities, use the metaxaQ
     }
     
   ## Start the Metaxa Classifier (metaxa_c)
-    `$bindir/metaxaQR_c -i "$tempDirGene/$output.extraction.fasta" -o "$tempDirGene/$output" -d "$blastDB" -t "$type" -g "$gene" -E "$E" -S "$S" -M "$M" -H "$H" -R "$C" --search_id "$search_id" --query_cov "$query_cov" --gap_penalty "$gap_penalty" --masking "$masking" --search_maxaccepts "$search_maxaccepts" --search_maxrejects "$search_maxrejects" --search_wordsize "$W" --philosophy "$philosophy" --cpu "$cpu" --summary "$out_sum" --fasta "$out_fasta" --table "$out_table" --align "$out_align" --not_found "$out_not" --taxonomy "$out_tax" --taxlevel "$tax_level" --silent "$silent" --reference "$reference" --ref_identity "$ref_id" --mode "$mode" --split_pairs "$split_pairs" --temp "$tempDirGene" --pipeline`;
+    `$bindir/metaxaQR_c -i "$tempDirGene/$outputFileName.extraction.fasta" -o "$tempDirGene/$outputFileName" -d "$blastDB" -t "$type" -g "$gene" -E "$E" -S "$S" -M "$M" -H "$H" -R "$C" --search_id "$search_id" --query_cov "$query_cov" --gap_penalty "$gap_penalty" --masking "$masking" --search_maxaccepts "$search_maxaccepts" --search_maxrejects "$search_maxrejects" --search_wordsize "$W" --philosophy "$philosophy" --cpu "$cpu" --summary "$out_sum" --fasta "$out_fasta" --table "$out_table" --align "$out_align" --not_found "$out_not" --taxonomy "$out_tax" --taxlevel "$tax_level" --silent "$silent" --reference "$reference" --ref_identity "$ref_id" --mode "$mode" --split_pairs "$split_pairs" --temp "$tempDirGene" --pipeline`;
     
     
   }
@@ -1566,7 +1569,7 @@ foreach $gene (@geneList) {
   if (scalar(@geneList) > 1) {
     $tempDirGene = $tempDir . "/" . $gene;   # Setup a temporary directory variable
     `mkdir $output.$gene`;
-    `cp $tempDirGene/$output* $output.$gene`;
+    `cp $tempDirGene/$outputFileName* $output.$gene`;
     if ($out_sum == 1) {   # If summary output is on
       open (SUMMARY, ">>$output.summary.txt");   # Append to the summary file
       print SUMMARY "-----------------------------------------------------------------\n";
@@ -1585,9 +1588,9 @@ foreach $gene (@geneList) {
     }
     if ($out_sum == 1) {   # If summary output is on
       `cat $output.summary.txt > $output.summary.txt.temp`;
-      `cat $tempDirGene/$output.summary.txt >> $output.summary.txt.temp`;
+      `cat $tempDirGene/$outputFileName.summary.txt >> $output.summary.txt.temp`;
     }
-    `cp $tempDirGene/$output* $destination`;
+    `cp $tempDirGene/$outputFileName* $destination`;
     if ($out_sum == 1) {   # If summary output is on
       `mv $output.summary.txt.temp $output.summary.txt`;
     }
@@ -1621,4 +1624,4 @@ if ($out_sum == 1) {   # If summary output is on
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - November 2024
+## //Johan Bengtsson-Palme, December 2010 - November 2025
