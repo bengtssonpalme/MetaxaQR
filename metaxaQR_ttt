@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # Metaxa Taxonomic Traversal Tool
 $app_title     = "MetaxaQR Taxonomic Traversal Tool -- Processes Taxonomic Output From Metaxa";
-$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 rc1";
+$app_author    = "Johan Bengtsson-Palme, Chalmers University of Technology";
+$app_version   = "3.0 rc2";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 

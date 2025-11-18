@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # MetaxaQR Classifier
 $app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
-$app_author    = "Johan Bengtsson-Palme, University of Gothenburg";
-$app_version   = "3.0 rc1";
+$app_author    = "Johan Bengtsson-Palme, Chalmers University of Technology";
+$app_version   = "3.0 rc2";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
@@ -35,6 +35,7 @@ $bugs = "New features in this version ($app_version):\
 - Updated help prompt\
 \
 Fixed bugs in this version ($app_version):\
+- Fixed a critical classification score calculation bug\
 - Fixed a bug resulting in overconfident predictions of certain input sequences distantly related to reference sequences in the database\
 - Changed a reverse complement read behaviour that resulted in inverted reads to be written to output\
 - Paired-end classification capability restored\
@@ -57,7 +58,7 @@ Sequence selection options:\
 --mode {m, metagenome, g, genome, a, auto} : Controls the MetaxaQR operating mode, default = metagenome\
 -E {value} : Domain E-value cutoff for a sequence to be included in the output, default = 1\
 -S {value} : Domain score cutoff for a sequence to be included in the output, default = 12\
--R {value} : Reliability cutoff for taxonomic classification, default = 75\
+-R {value} : Reliability cutoff for taxonomic classification, default = 80\
 -H {value} : The score that the MetaxaQR Extractor prediction is given, default = 50\
 --masking {T or F} : Whether to use masking in the searches or not, off (F) by default\
 --query_cov {value} : The query coverage cutoff applied to the vsearch step, default = 0.9\
@@ -108,7 +109,7 @@ $E = 1e-3;
 $S = 0;
 $H = 50;
 $W = 8;
-$C = 75;
+$C = 80;
 $search_ID = 0.5;
 $masking = 0;
 $maxaccepts = 4;
@@ -1093,7 +1094,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	        ## set the new common taxonomy to remain the same
 	        $new_common_tax = $common_tax;
 	      } else {
-          if ($philosophy == "negligent") {
+          if ($philosophy eq "negligent") {
             if (length($common_tax) > length($mqr_tax)) {
               $new_common_tax = $common_tax;
               $new_tax_determined = 1;
@@ -1102,7 +1103,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
               $new_tax_determined = 1;
             }
           }
-          if ($philosophy == "liberal") {
+          if ($philosophy eq "liberal") {
             if (length($common_tax) > length($mqr_tax)) {
               if ($common_tax =~ m/$mqr_tax/) {
                 $new_common_tax = $common_tax;
@@ -1187,12 +1188,12 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
       $branch_prop = $tax_branch_level / $mqr_full_level;
       ## Calculate match scores based on the matched and non-matched region lengths
 	    #$rMScore = ((((log($rMLen + 1))/(log($rMLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rMLen)) / ($tax_branch_level ** 0.5);
-      $rMScore = (($rID * 0.98) ** (100 / $rMLen)) / (7 * $branch_prop ** 0.75);
+      $rMScore = (($rID * 0.98) ** (300 / $rMLen)) / (7 * $branch_prop ** 0.75);
 	    if ($rDLen > 0) {
         if ($rMLen < $dblens{$subject} * 0.95) {
 	        #$rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen)) / ($tax_branch_level ** 0.5);
           #$rDScore = ((((log($rDLen + 1))/(log($rDLen + 1) + 0.1)) - 0.5) * 2 * ($rID * 0.98) ** (1000 / $rDLen));
-          $rDScore = (($rID * 0.98) ** (100 / $rDLen)) / (7 * $branch_prop ** 0.75);
+          $rDScore = (($rID * 0.98) ** (300 / $rDLen)) / (7 * $branch_prop ** 0.75);
         } else {
   	      $rDScore = 0;
         }
@@ -1204,7 +1205,7 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	    if ($rScore < 0) {
   	    $rScore = 0;
 	    }
-	    $confidence = $rScore * 250;
+	    $confidence = $rScore * 1500;
       if ($confidence > 100) {
         $confidence = 100;
       }
@@ -1698,4 +1699,4 @@ sub findIDLevel {
 ## Please send beers, pizzas, cakes, fruit pies, job positions and other types of feedback to:
 ## johan.bengtsson [at] microbiology.se
 ## Looking forward to hearing from you.... visit my website: www.microbiology.se for info on my research
-## //Johan Bengtsson-Palme, December 2010 - November 2024
+## //Johan Bengtsson-Palme, December 2010 - November 2025

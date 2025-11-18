@@ -11,8 +11,8 @@ from src.mqr_db.mqrdb_run import main_mqrdb
 
 # MetaxaQR Database Builder
 app_title = "MetaxaQR Database Builder -- Automatic database creation for MetaxaQR"
-app_author = "Sebastian Wettersten & Johan Bengtsson-Palme, University of Gothenburg"
-app_version = "3.0 rc1"
+app_author = "Sebastian Wettersten & Johan Bengtsson-Palme, Chalmers University of Technology"
+app_version = "3.0 rc2"
 # ----------------------------------------------------------------- #
 
 # License information
