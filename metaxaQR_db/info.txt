@@ -1,0 +1,1 @@
+# This is where the databases will go when downloaded. Use `metaxaQR_install_databases` to obtain up-to-date MetaxaQR databases
