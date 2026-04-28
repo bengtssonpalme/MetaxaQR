@@ -3,11 +3,11 @@ MetaxaQR: Improved Identification and Classification of SSU sequences in Environ
 Source code available at:
 http://microbiology.se/software/metaxaQR
 
-Version: 3.0 rc2
+Version: 3.0 rc3
 MetaxaQR -- Identifies taxonomic markers and classifies them
-Copyright (C) 2011-2025 Johan Bengtsson-Palme et al.
+Copyright (C) 2011-2026 Johan Bengtsson-Palme et al.
 Contact: Johan Bengtsson-Palme, johan.bengtsson[at]microbiology.se
-Programmers: Johan Bengtsson-Palme & Sebastian Wettersten
+Programmers: Johan Bengtsson-Palme, Sebastian Wettersten & Daniel Borg
 
 The easiest way to install MetaxaQR is via conda. 
 A quick installation guide for manual installations follows below.

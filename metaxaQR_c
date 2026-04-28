@@ -2,14 +2,14 @@
 # MetaxaQR Classifier
 $app_title     = "MetaxaQR Classifier -- Classifies (predicted) barcoding genes";
 $app_author    = "Johan Bengtsson-Palme, Chalmers University of Technology";
-$app_version   = "3.0 rc2";
+$app_version   = "3.0 rc3";
 $app_message   = "";
 # ----------------------------------------------------------------- #
 
 # License information
 $license =
   "    metaxaQR_c -- MetaxaQR Classifier -- Classifies (predicted) barcoding genes\
-    Copyright (C) 2011-2025 Johan Bengtsson-Palme & Sebastian Wettersten\
+    Copyright (C) 2011-2026 Johan Bengtsson-Palme & Sebastian Wettersten\
 \
     This program is free software: you can redistribute it and/or modify\
     it under the terms of the GNU General Public License as published by\
@@ -526,6 +526,15 @@ This error is fatal, and MetaxaQR will now abort.\n";
     print STDERR "$now : Building vsearch UDB database for reference sequences...\n";
   }
   `vsearch --makeudb_usearch $reference --output $tempDir/REF_DB.udb --dbmask none --quiet`;
+  if ($? & 127) {
+    print STDERR "Fatal error: vsearch killed by signal " . ($? & 127) . "\n";
+    exit;
+  } else {
+    if ($? != 0) {
+      print STDERR "Fatal error: vsearch exited with code " . ($? >> 8) . "\n";
+      exit;
+    }
+  }
 }
 
 ## Check if this comes from a paired file pair of reads
@@ -711,6 +720,15 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	print STDERR "$now : Building vsearch UDB database (will only be done once)...\n";
       }
       `vsearch --makeudb_usearch $blastDB.fasta --output $blastDB.udb --dbmask none --quiet`;
+      if ($? & 127) {
+        print STDERR "Fatal error: vsearch killed by signal " . ($? & 127) . "\n";
+        exit;
+      } else {
+        if ($? != 0) {
+          print STDERR "Fatal error: vsearch exited with code " . ($? >> 8) . "\n";
+          exit;
+        }
+      }
     }
     
     if ($masking == 1) {
@@ -727,6 +745,15 @@ for ($filenumber = 1; $filenumber <= $totalfiles; $filenumber++) {
 	`vsearch --usearch_global $input.$filenumber --db $tempDir/REF_DB.udb --id $search_ID --blast6out $tempDir/reference.blastn.$filenumber --strand both --query_cov $query_cov --gapopen $gapopen --gapext $gapext --qmask none --threads $cpu --wordlength $W --maxaccepts $maxaccepts --maxrejects $maxrejects --maxhits $maxaccepts --top_hits_only --quiet`;
       }
       
+    }
+    if ($? & 127) {
+      print STDERR "Fatal error: vsearch killed by signal " . ($? & 127) . "\n";
+      exit;
+    } else {
+      if ($? != 0) {
+        print STDERR "Fatal error: vsearch exited with code " . ($? >> 8) . "\n";
+        exit;
+      }
     }
   } else {
     `cp $blastreport $tempDir/rRNA.blastn.$filenumber`;
